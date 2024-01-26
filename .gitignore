@@ -4,3 +4,5 @@ codellama_tokenized/
 finetuned_models/
 poc_data/
 wandb/
+codellama/output/
+codellama/eval_results/

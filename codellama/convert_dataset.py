@@ -32,17 +32,6 @@ def min_len_answer(answers):
     return res
 
 
-# Gets the min length solution, helps reduce max_seq_len
-def min_len_answer(answers):
-    if not answers:
-        return None
-    res = answers[0]
-    for ans in answers:
-        if (len(ans) < len(res)):
-            res = ans
-    return res
-
-
 # Keys: ['question', 'solutions', 'starter_code', 'input_output', 'difficulty', 'raw_tags', 'name', 'source', 'tags', 'skill_types', 'url', 'Expected Auxiliary Space', 'time_limit', 'date', 'picture_num', 'memory_limit', 'Expected Time Complexity']
 # Questions have multiple solutions, just use the first for now
 # Creates a 90/10 train/dev split
@@ -62,12 +51,6 @@ def dataset_to_jsonl(dataset, output_dir, split_ratio=0.9, category=None):
         data["tags"] = convert_str_list(record["tags"])
         data["text"] = create_prompt(data["question"], data["answer"], data["skill_types"])
         all_data.append(data)
-
-
-    if not category:
-        texts = [d["text"] for d in all_data]
-        ans = min_len_answer(texts)
-        print("WORST:", len(ans))
 
     random.seed(17)
     random.shuffle(all_data)

@@ -41,6 +41,8 @@ def load_generation(input_file):
     return generations
 
 def evaluate_generations(generations, samples, idx=None, debug=False):
+    print(len(generations.keys()))
+    print(len(samples))
     assert len(generations.keys()) == len(samples)
     results = {}
     idx = 0
@@ -124,15 +126,14 @@ def main():
     # skills = ['ALL']
     # skills = ["Data structures", "Sorting", "Range queries", "Complete search", "Amortized analysis", "Dynamic programming", "Bit manipulation", "Greedy algorithms"]
 
-    difficulties = ["EASY"]
-    test_data = load_dataset('BAAI/TACO', split='test', difficulties=difficulties)
-    test_data = test_data.select(list(range(50)))
-    print(len(test_data))
+    skills = ["Sorting", "Greedy algorithms", "Data structures"]
+    test_data = load_dataset('BAAI/TACO', split='test', skills=skills)
+    test_data_easy = test_data.filter(lambda example: example["difficulty"] == "EASY")
 
-    generation_file = 'generation.json'
+    generation_file = "output/codellama_python/ft_test_bs4_e10.json"
     generations = load_generation(generation_file)
 
-    results = evaluate_generations(generations, test_data)
+    results = evaluate_generations(generations, test_data_easy)
     metrics = compute_metrics(results)
 
     json.dump(metrics, open('evaluation.json', 'w'), indent=4)
