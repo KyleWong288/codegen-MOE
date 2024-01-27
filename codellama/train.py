@@ -1,145 +1,122 @@
-from datasets import load_dataset
-from trl import SFTTrainer
+import torch
+import os
 import wandb
 import argparse
-import os
-import torch
-from peft import LoraConfig
-from tqdm import tqdm
-from transformers import AutoModelForCausalLM, BitsAndBytesConfig, TrainingArguments
-
-def parse_args():
-    parser = argparse.ArgumentParser()
-    # data arguments
-    parser.add_argument("--dataset_path", type=str, help="the dataset path where the json is stored")
-    parser.add_argument("--dataset_text_field", type=str, default="text", help="the text field of the dataset")
-    parser.add_argument("--seq_length", type=int, default=512, help="Input sequence length")
-    parser.add_argument("--n_train_pairs", type=int, default=None, help="Number of training pairs")
-    parser.add_argument("--seed", type=int, default=42, help="Random seed")
-    # model arguments
-    parser.add_argument("--model_name", type=str, help="the model name")
-    parser.add_argument("--cache_dir", type=str, default=None, help="The cache directory to save the model")
-    parser.add_argument("--load_in_8bit", action='store_true', help="load the model in 8 bits precision")
-    parser.add_argument("--load_in_4bit", action='store_true', help="load the model in 4 bits precision")
-    parser.add_argument("--trust_remote_code", type=bool, default=True, help="Enable `trust_remote_code`")
-    parser.add_argument("--use_auth_token", type=bool, default=True, help="Use HF auth token to access the model")
-    # training arguments
-    ## 1. saving
-    parser.add_argument("--output_dir", type=str, default="output", help="the output directory")
-    parser.add_argument("--save_steps", type=int, default=100, help="Number of updates steps before two checkpoint saves")
-    parser.add_argument("--save_total_limit", type=int, default=10, help="Limits total number of checkpoints.")
-    parser.add_argument("--push_to_hub", action='store_true', help="Push the model to HF Hub")
-    parser.add_argument("--hub_model_id", type=str, default=None, help="The name of the model on HF Hub")
-    ## 2. logging
-    parser.add_argument("--log_with", type=str, default=None, help="use 'wandb' to log with wandb")
-    parser.add_argument("--wandb_project", type=str, help="the wandb project name")
-    parser.add_argument("--logging_steps", type=int, default=1, help="the number of logging steps")
-    ## 3. learning
-    parser.add_argument("--learning_rate", type=float, default=1.41e-5, help="the learning rate")
-    parser.add_argument("--batch_size", type=int, default=64, help="the batch size")
-    parser.add_argument("--gradient_accumulation_steps", type=int, default=16, help="the number of gradient accumulation steps")
-    parser.add_argument("--num_train_epochs", type=int, default=3, help="the number of training epochs")
-    parser.add_argument("--max_steps", type=int, default=-1, help="the number of training steps")
-    ## 4. peft & lora args
-    parser.add_argument("--use_peft", action='store_true', help="Wether to use PEFT or not to train adapters")
-    parser.add_argument("--peft_lora_r", type=int, default=64, help="the r parameter of the LoRA adapters")
-    parser.add_argument("--peft_lora_alpha", type=int, default=16, help="the alpha parameter of the LoRA adapters")
-
-    args = parser.parse_args()
-    return args
-
-class LoraTrainer:
-    def __init__(self, args):
-        self.model_name = args.model_name
-        self.dataset_path = args.dataset_path
-        self.args = args
-        self.load_dataset()
-        self.load_model()
-
-    def load_dataset(self):
-        train_file = self.dataset_path + ".jsonl"
-        # eval_file = os.path.join(self.dataset_path, 'dev.jsonl')
-        self.train_dataset = load_dataset('json', data_files=train_file, split='train', download_mode='force_redownload')  
-        # self.dev_dataset = load_dataset('json', data_files=eval_file, split='train', download_mode='force_redownload')
-        self.output_dir = os.path.join(self.args.output_dir, f"{self.model_name}")
+from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import TrainingArguments
+from trl import SFTTrainer, DataCollatorForCompletionOnlyLM
+from peft import TaskType, LoraConfig
+from utils import *      
 
 
-    def load_model(self):
-        if self.args.load_in_8bit and self.args.load_in_4bit:
-            raise ValueError("You can't load the model in 8 bits and 4 bits at the same time")
-        elif self.args.load_in_8bit or self.args.load_in_4bit:
-            quantization_config = BitsAndBytesConfig(
-                load_in_8bit=self.args.load_in_8bit, load_in_4bit=self.args.load_in_4bit
-            )
-            device_map = "auto"
-            torch_dtype = torch.bfloat16
-        else:
-            device_map = None
-            quantization_config = None
-            torch_dtype = None
+def main(args):
+        
+    model_name = parse_model_name(args.base_model, args.from_remote)
+    
+    # load model
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        load_in_8bit=True,
+        trust_remote_code=True,
+        # device_map="auto"
+    )
+    if args.local_rank == 0:
+        print(model)
+    print("MODEL LOADED:", model_name)
+    
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+    tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "right"
 
-        self.model = AutoModelForCausalLM.from_pretrained(
-            self.model_name,
-            quantization_config=quantization_config,
-            device_map=device_map,
-            trust_remote_code=self.args.trust_remote_code,
-            torch_dtype=torch_dtype,
-            use_auth_token=self.args.use_auth_token,
-            # cache_dir=self.args.cache_dir,
-            # token=HF_TOKEN
-        )
-        print(f"Model {self.model_name} loaded")
+    # load data
+    dataset_dir = os.path.join("../poc_data", args.dataset)
+    train_dataset, dev_dataset = load_dataset(dataset_dir)
+    print("DATASETS LOADED:", dataset_dir)
+    
+    training_args = TrainingArguments(
+        output_dir=f'../finetuned_models/{args.run_name}',
+        logging_steps=args.log_interval,
+        num_train_epochs=args.num_epochs,
+        per_device_train_batch_size=args.batch_size,
+        per_device_eval_batch_size=args.batch_size,
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
+        dataloader_num_workers=args.num_workers,
+        learning_rate=args.learning_rate,
+        weight_decay=args.weight_decay,
+        warmup_ratio=args.warmup_ratio,
+        lr_scheduler_type=args.scheduler,
+        save_steps=args.eval_steps,
+        eval_steps=args.eval_steps,
+        fp16=True,
+        evaluation_strategy=args.evaluation_strategy,
+        remove_unused_columns=False,
+        report_to='wandb',
+        run_name=args.run_name,
+        load_best_model_at_end=True,
+        metric_for_best_model="eval_loss"
+    )
+    
+    model.gradient_checkpointing_enable()
+    model.enable_input_require_grads()
+    model.is_parallelizable = True
+    model.model_parallel = True
+    model.model.config.use_cache = False
+    
+    # setup peft
+    peft_config = LoraConfig(
+        task_type=TaskType.CAUSAL_LM,
+        r=32,
+        lora_alpha=64,
+        lora_dropout=0.1,
+        target_modules=lora_module_dict[args.base_model],
+        bias='none',
+    )
 
-    def train(self):
-        # Step 1: Define the training arguments
-        training_args = TrainingArguments(
-            output_dir=self.output_dir,
-            per_device_train_batch_size=self.args.batch_size,
-            gradient_accumulation_steps=self.args.gradient_accumulation_steps,
-            learning_rate=self.args.learning_rate,
-            logging_steps=self.args.logging_steps,
-            num_train_epochs=self.args.num_train_epochs,
-            max_steps=self.args.max_steps,
-            report_to=self.args.log_with,
-            save_steps=self.args.save_steps,
-            save_total_limit=self.args.save_total_limit,
-            push_to_hub=self.args.push_to_hub,
-            hub_model_id=self.args.hub_model_id
-        )
-
-        # Step 2: Define the LoraConfig
-        if self.args.use_peft:
-            peft_config = LoraConfig(
-                r=self.args.peft_lora_r,
-                lora_alpha=self.args.peft_lora_alpha,
-                bias="none",
-                task_type="CAUSAL_LM",
-            )
-        else:
-            peft_config = None
-
-        # Step 3: Define the Trainer
-        trainer = SFTTrainer(
-            model=self.model,
-            args=training_args,
-            max_seq_length=self.args.seq_length,
-            train_dataset=self.train_dataset,
-            # eval_dataset=self.dev_dataset,
-            dataset_text_field=self.args.dataset_text_field,
-            peft_config=peft_config,
-        )
-
-        print("TRAINING BEGIN")
-        trainer.train()
-
-        # Step 4: Save the model
-        trainer.save_model(self.output_dir)
-        print("SUCCESSFULLY SAVED MODEL")
-
-# TODO: try training with NEFT instead of SFT
-if __name__ == "__main__":
-    args = parse_args()
-    tqdm.pandas()
-    wandb.init(project=args.wandb_project)
-    trainer = LoraTrainer(args)
+    # setup trainer
+    trainer = SFTTrainer(
+        model=model,
+        args=training_args,
+        max_seq_length=args.max_seq_length,
+        train_dataset=train_dataset,
+        eval_dataset=dev_dataset,
+        tokenizer=tokenizer,
+        dataset_text_field="text",
+        peft_config=peft_config,
+    )
+    
+    print("TRAINING BEGIN")
+    torch.cuda.empty_cache()
     trainer.train()
+
+    # save model
+    model.save_pretrained(training_args.output_dir)
+    print("MODEL SUCCESSFULLY SAVED")
+
+
+if __name__ == "__main__":
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--local_rank", default=0, type=int)
+    parser.add_argument("--run_name", default='local-test', type=str)
+    parser.add_argument("--dataset", required=True, type=str)
+    parser.add_argument("--test_dataset", type=str)
+    parser.add_argument("--base_model", required=True, type=str, choices=["codellama", "codellama_python", "llama2-7b"])
+    parser.add_argument("--max_seq_length", default=1024, type=int)
+    parser.add_argument("--batch_size", default=4, type=int)
+    parser.add_argument("--learning_rate", default=1e-4, type=float)
+    parser.add_argument("--weight_decay", default=0.01, type=float)
+    parser.add_argument("--num_epochs", default=6, type=float)
+    parser.add_argument("--num_workers", default=8, type=int)
+    parser.add_argument("--log_interval", default=20, type=int)
+    parser.add_argument("--gradient_accumulation_steps", default=8, type=int)
+    parser.add_argument("--warmup_ratio", default=0.05, type=float)
+    parser.add_argument("--scheduler", default='linear', type=str)
+    parser.add_argument("--instruct_template", default='default')
+    parser.add_argument("--evaluation_strategy", default='steps', type=str)  
+    parser.add_argument("--eval_steps", default=0.1, type=float) 
+    parser.add_argument("--from_remote", default=False, type=bool)
+    parser.add_argument("--ds_config", default='./config_new.json', type=str)
+    args = parser.parse_args()
+    
+    wandb.login()
+    main(args)

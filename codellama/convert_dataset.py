@@ -11,12 +11,17 @@ def convert_str_list(input):
 
 
 # Creates the finalized prompt
-# For now, the prompt is category agnostic
 # Using "Question/Answer" instead of "Input/Output" because input/output is also used for test cases 
 # TODO: experiment with removing the examples in the prompt
 # TODO: experiment without the '###'
-def create_prompt(question, answer, skills=None):
+def create_prompt(question, answer, skill=None):
     instruction = "Write a Python program that solves the following question."
+    if skill == "Sorting":
+        instruction += " Your program should use sorting."
+    elif skill == "Greedy algorithms":
+        instruction += " Your program should use a greedy algorithm."
+    elif skill == "Data structures":
+        instruction += " Your program should use data structures."
     res = "### Instruction: {} \n\n ### Question: {} \n\n ### Answer:\n{}".format(instruction, question, answer)
     return res
 
@@ -36,7 +41,7 @@ def min_len_answer(answers):
 # Questions have multiple solutions, just use the first for now
 # Creates a 90/10 train/dev split
 # TODO: EDA potential for making a larger dataset
-def dataset_to_jsonl(dataset, output_dir, split_ratio=0.9, category=None):
+def dataset_to_jsonl(dataset, output_dir, split_ratio=0.9, skill=None):
     all_data = []
     for record in dataset:
         data = {}
@@ -46,10 +51,10 @@ def dataset_to_jsonl(dataset, output_dir, split_ratio=0.9, category=None):
         if not data["answer"]:
             continue
         data["skill_types"] = convert_str_list(record["skill_types"])
-        if category and category not in data["skill_types"]:
+        if skill and skill not in data["skill_types"]:
             continue
         data["tags"] = convert_str_list(record["tags"])
-        data["text"] = create_prompt(data["question"], data["answer"], data["skill_types"])
+        data["text"] = create_prompt(data["question"], data["answer"], skill)
         all_data.append(data)
 
     random.seed(17)
@@ -78,7 +83,7 @@ def dataset_to_jsonl(dataset, output_dir, split_ratio=0.9, category=None):
 # Splits dataset by tag/skill_type
 if __name__ == "__main__":
 
-    data_dir = "./poc_data"
+    data_dir = "../poc_data"
     train_dev_ratio = 0.9
 
     skills = ["Sorting", "Greedy algorithms", "Data structures"]
