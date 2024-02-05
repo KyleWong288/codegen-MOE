@@ -18,7 +18,7 @@ def main(args):
         model_name,
         load_in_8bit=True,
         trust_remote_code=True,
-        # device_map="auto"
+        device_map="auto"
     )
     if args.local_rank == 0:
         print(model)
@@ -34,7 +34,7 @@ def main(args):
     print("DATASETS LOADED:", dataset_dir)
     
     training_args = TrainingArguments(
-        output_dir=f'../finetuned_models/{args.run_name}',
+        output_dir=f'./finetuned_models/{args.run_name}',
         logging_steps=args.log_interval,
         num_train_epochs=args.num_epochs,
         per_device_train_batch_size=args.batch_size,

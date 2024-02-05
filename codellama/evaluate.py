@@ -126,17 +126,19 @@ def main():
     # skills = ['ALL']
     # skills = ["Data structures", "Sorting", "Range queries", "Complete search", "Amortized analysis", "Dynamic programming", "Bit manipulation", "Greedy algorithms"]
 
-    skills = ["Sorting", "Greedy algorithms", "Data structures"]
+    # skills = ["Sorting", "Greedy algorithms", "Data structures"]
+    skills = ["Sorting"]
     test_data = load_dataset('BAAI/TACO', split='test', skills=skills)
     test_data_easy = test_data.filter(lambda example: example["difficulty"] == "EASY")
 
-    generation_file = "output/codellama_python/ft_test_bs4_e10.json"
+    RUN_NAME = "sorting_bs4_e8_late"
+    generation_file = f"output/codellama_python/{RUN_NAME}.json"
     generations = load_generation(generation_file)
 
     results = evaluate_generations(generations, test_data_easy)
     metrics = compute_metrics(results)
 
-    json.dump(metrics, open('evaluation.json', 'w'), indent=4)
+    json.dump(metrics, open(f'evaluation_{RUN_NAME}.json', 'w'), indent=4)
 
 if __name__ == "__main__":
     main()

@@ -15,6 +15,12 @@ LLAMA_MODEL_DICT = {
     "codellama": "codellama/CodeLlama-7b-hf",
     "codellama_python": "codellama/CodeLlama-7b-Python-hf"
 }
+SKILL_DICT = {
+    "sorting": ["Sorting"],
+    "greedy": ["Greedy"],
+    "data_structures": ["Data structures"],
+    "all": ["Sorting", "Greedy algorithms", "Data structures"]
+}
 EOF_STRINGS = ["\nQUESTION", "\n---", "\nANSWER", "<|endoftext|>"]
 
 
@@ -30,6 +36,7 @@ parser.add_argument("--base_model_name", type=str, help="the base model name", d
 parser.add_argument("--checkpoint_path", type=str, help="the checkpoint path", default="./../checkpoints/Llama-2-7b-chat-hf")
 parser.add_argument("--load_in_8bit", action='store_true', help="load the model in 8 bits precision", default=True)
 parser.add_argument("--trust_remote_code", type=bool, default=True, help="Enable `trust_remote_code`")
+parser.add_argument("--skill", type=str, default="all", help="the skill to test on")
 args = parser.parse_args()
 
 
@@ -96,6 +103,12 @@ def predict(model, tokenizer, gen_config, prompt, seed):
 
 def create_prompt(question, skill=None):
     instruction = "Write a Python program that solves the following question."
+    if skill == "sorting":
+        instruction += " Your program should use sorting."
+    elif skill == "greedy":
+        instruction += " Your program should use a greedy algorithm."
+    elif skill == "data_structures":
+        instruction += " Your program should use data structures."
     res = "### Instruction: {} \n\n ### Question: {} \n\n ### Answer:\n".format(instruction, question)
     return res
 
@@ -115,11 +128,12 @@ if __name__ == "__main__":
     tokenizer.pad_token = tokenizer.eos_token
 
     # Load test data and set up evaluation parameters
-    skills = ["Sorting", "Greedy algorithms", "Data structures"]
+    skills = SKILL_DICT[args.skill]
+    print("SKILLS:", skills)
     test_data = load_dataset('BAAI/TACO', split='test', skills=skills)
     print(len(test_data))
     
-    output_file = f"./output/{args.model_name}/{args.run_name}.json"
+    output_file = f"./output/{args.model_name}/{args.run_name}_late.json"
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
     output = []
 
@@ -137,6 +151,7 @@ if __name__ == "__main__":
             continue
         print("ON:", idx)
         prompt = create_prompt(sample["question"])
+        print(prompt)
         results = {"task_id": idx, "prompt": prompt}
         generations = []
         for i in tqdm(range(n_samples)):

@@ -1,8 +1,8 @@
 __pycache__/
 checkpoints/
 codellama_tokenized/
-finetuned_models/
-poc_data/
+*data/
 wandb/
 codellama/output/
 codellama/eval_results/
+codellama/finetuned_models/
