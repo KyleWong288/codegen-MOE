@@ -3,15 +3,21 @@ import random
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Sequence
 
+import datasets
+import os
 import torch
 import torch.distributed
 import transformers
+import wandb
 from transformers import Trainer
-from datasets import load_dataset
+from trl import SFTTrainer
+from peft import TaskType, LoraConfig
+from utils import *
 
 
 IGNORE_INDEX = -100
 EOT_TOKEN = "<|EOT|>"
+
 
 def build_instruction_prompt(instruction: str):
     return '''
@@ -28,17 +34,17 @@ class ModelArguments:
 
 @dataclass
 class DataArguments:
-    data_path: str = field(default=None, metadata={"help": "Path to the training data."})
-
+    data_path: str = field(default=None, metadata={"help": "Dataset name"})
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
     cache_dir: Optional[str] = field(default=None)
     optim: str = field(default="adamw_torch")
     model_max_length: int = field(
-        default=512,
+        default=2048,
         metadata={"help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."},
     )
+
 
 def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: str):
     """Collects the state dict and dump to disk."""
@@ -90,6 +96,7 @@ def preprocess(
         label[:source_len] = IGNORE_INDEX
     return dict(input_ids=input_ids, labels=labels)
 
+
 @dataclass
 class DataCollatorForSupervisedDataset(object):
     """Collate examples for supervised fine-tuning."""
@@ -110,6 +117,7 @@ class DataCollatorForSupervisedDataset(object):
             attention_mask=input_ids.ne(self.tokenizer.pad_token_id),
         )
 
+
 def train_tokenize_function(examples, tokenizer):
     sources = [
         build_instruction_prompt(instruction)
@@ -118,6 +126,7 @@ def train_tokenize_function(examples, tokenizer):
     targets = [f"{output}\n{EOT_TOKEN}" for output in examples['output']]
     data_dict = preprocess(sources, targets, tokenizer)
     return data_dict
+
 
 def train():
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
@@ -138,41 +147,44 @@ def train():
     print("PAD Token:", tokenizer.pad_token, tokenizer.pad_token_id)
     print("BOS Token", tokenizer.bos_token, tokenizer.bos_token_id)
     print("EOS Token", tokenizer.eos_token, tokenizer.eos_token_id)
-
-    if training_args.local_rank == 0:
-        print("Load tokenizer from {} over.".format(model_args.model_name_or_path))
+    print("Load tokenizer from {} over.".format(model_args.model_name_or_path))
 
     model = transformers.AutoModelForCausalLM.from_pretrained(
         model_args.model_name_or_path,
         torch_dtype=torch.bfloat16
     )
 
-    if training_args.local_rank == 0:
-        print("Load model from {} over.".format(model_args.model_name_or_path))
+    print("Load model from {} over.".format(model_args.model_name_or_path))
 
+    raw_train_dataset, raw_eval_dataset = load_dataset(data_args.data_path)
+    
+    # if training_args.local_rank > 0: 
+    #     torch.distributed.barrier()
 
-    raw_train_datasets = load_dataset(
-        'json',
-        data_files=data_args.data_path,
-        split="train",
-        cache_dir=training_args.cache_dir
-    )
-    if training_args.local_rank > 0: 
-        torch.distributed.barrier()
-        
-    train_dataset = raw_train_datasets.map(
+    train_dataset = raw_train_dataset.map(
         train_tokenize_function,
         batched=True,
         batch_size=3000,
         num_proc=32,
-        remove_columns=raw_train_datasets.column_names,
+        remove_columns=raw_train_dataset.column_names,
         load_from_cache_file=True, # not args.overwrite_cache
         desc="Running Encoding",
         fn_kwargs={ "tokenizer": tokenizer }
     )
 
-    if training_args.local_rank == 0:
-        torch.distributed.barrier()
+    eval_dataset = raw_eval_dataset.map(
+        train_tokenize_function,
+        batched=True,
+        batch_size=3000,
+        num_proc=32,
+        remove_columns=raw_eval_dataset.column_names,
+        load_from_cache_file=True, # not args.overwrite_cache
+        desc="Running Encoding",
+        fn_kwargs={ "tokenizer": tokenizer }
+    )
+        
+    # if training_args.local_rank == 0:
+    #     torch.distributed.barrier()
     
     if training_args.local_rank == 0:
         print("Training dataset samples:", len(train_dataset))
@@ -180,15 +192,42 @@ def train():
             print(f"Sample {index} of the training set: {train_dataset[index]['input_ids']}, {train_dataset[index]['labels']}.")
             print(f"Sample {index} of the training set: {tokenizer.decode(list(train_dataset[index]['input_ids']))}.")
 
+        print("Evaluation dataset samples:", len(eval_dataset))
+        for index in random.sample(range(len(eval_dataset)), 3):
+            print(f"Sample {index} of the training set: {eval_dataset[index]['input_ids']}, {eval_dataset[index]['labels']}.")
+            print(f"Sample {index} of the training set: {tokenizer.decode(list(eval_dataset[index]['input_ids']))}.")
+
     data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
-    data_module = dict(train_dataset=train_dataset, eval_dataset=None, data_collator=data_collator)
+    data_module = dict(train_dataset=train_dataset, eval_dataset=eval_dataset, data_collator=data_collator)
 
-    trainer = Trainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
+    # setup peft
+    peft_config = LoraConfig(
+        task_type=TaskType.CAUSAL_LM,
+        r=32,
+        lora_alpha=64,
+        lora_dropout=0.1,
+        target_modules=lora_module_dict[model_args.model_name_or_path],
+        bias='none',
+    )
 
+    trainer = SFTTrainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        tokenizer=tokenizer,
+        peft_config=peft_config,
+    )
+
+    # trainer = Trainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
+
+    print("TRAINING BEGIN")
     trainer.train()
     trainer.save_state()
     safe_save_model_for_hf_trainer(trainer=trainer, output_dir=training_args.output_dir)
+    print("MODEL SUCCESSFULLY SAVED")
 
 
 if __name__ == "__main__":
+    wandb.login()
     train()
