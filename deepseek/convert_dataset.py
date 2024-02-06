@@ -5,6 +5,7 @@ import random
 from datasets import load_dataset
 
 SEED = 17
+EOT_TOKEN = "<|EOT|>"
 
 # Converts string representation of a list into an actual list
 def convert_str_list(input):
@@ -13,7 +14,10 @@ def convert_str_list(input):
 
 
 # Creates the finalized prompt
-def create_instruction(question, skill=None):
+# Using "### Instruction" and "### Response" for DeepSeek Coder
+# TODO: experiment with removing the examples in the prompt
+def create_prompt(question, answer, skill=None):
+    dsc_statement = "You are an AI programming assistant, utilizing the DeepSeek Coder model, developed by DeepSeek Company, and you only answer questions related to computer science. For politically sensitive questions, security and privacy issues, and other non-computer science questions, you will refuse to answer."
     instruction = "Write a Python program that solves the following question."
     if skill == "Sorting":
         instruction += " Your program should use sorting."
@@ -21,7 +25,7 @@ def create_instruction(question, skill=None):
         instruction += " Your program should use a greedy algorithm."
     elif skill == "Data structures":
         instruction += " Your program should use data structures."
-    res = "{}\nQuestion: {}".format(instruction, question)
+    res = "{} \n\n### Instruction: {} \nQuestion: {} \n\n### Response:\n{} \n{}".format(dsc_statement, instruction, question, answer, EOT_TOKEN)
     return res
 
 
@@ -44,15 +48,16 @@ def convert_dataset(dataset, target_size, skill=None):
 
     for record in dataset:
         data = {}
-        data["instruction"] = create_instruction(record["question"], skill)
-        data["output"] = convert_str_list(record["solutions"])
-        data["output"] = min_len_answer(data["output"])
-        if not data["output"]:
+        data["question"] = record["question"]
+        data["answer"] = convert_str_list(record["solutions"])
+        data["answer"] = min_len_answer(data["answer"])
+        if not data["answer"]:
             continue
         data["skill_types"] = convert_str_list(record["skill_types"])
         if skill and skill not in data["skill_types"]:
             continue
         data["tags"] = convert_str_list(record["tags"])
+        data["text"] = create_prompt(data["question"], data["answer"], skill)
         all_data.append(data)
 
     if len(all_data) > target_size:
@@ -107,5 +112,7 @@ if __name__ == "__main__":
         data = convert_dataset(train_data, target_size, skill)
         save_dataset(data, output_dir, train_dev_ratio)
         print("Wrote to", value)
+        print("SAMPLE:")
+        print(data[0]["text"])
 
     print("Datasets successfully converted!")

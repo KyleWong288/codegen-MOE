@@ -1,6 +1,6 @@
 DATA_PATH="../../dsc_limit_data/all"
 OUTPUT_PATH="./finetuned_models/all"
-MODEL="deepseek-ai/deepseek-coder-6.7b-instruct"
+MODEL="dsc-6.7b-instruct"
 
 CUDA_VISIBLE_DEVICES=1,2,3,4,5,6,7 python finetune.py \
     --model_name_or_path $MODEL \
@@ -17,10 +17,10 @@ CUDA_VISIBLE_DEVICES=1,2,3,4,5,6,7 python finetune.py \
     --save_total_limit 100 \
     --learning_rate 2e-5 \
     --warmup_steps 10 \
-    --logging_steps 1 \
+    --logging_steps 10 \
     --lr_scheduler_type cosine \
     --report_to wandb \
-    --bf16 False
+    --fp16 True \
 
 # deepspeed finetune.py \
 #     --model_name_or_path $MODEL \

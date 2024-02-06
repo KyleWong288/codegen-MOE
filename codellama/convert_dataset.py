@@ -4,6 +4,8 @@ import os
 import random
 from datasets import load_dataset
 
+SEED = 17
+
 # Converts string representation of a list into an actual list
 def convert_str_list(input):
     res = ast.literal_eval(input)
@@ -41,8 +43,9 @@ def min_len_answer(answers):
 # Questions have multiple solutions, just use the first for now
 # Creates a 90/10 train/dev split
 # TODO: EDA potential for making a larger dataset
-def dataset_to_jsonl(dataset, output_dir, split_ratio=0.9, skill=None):
+def convert_dataset(dataset, target_size, skill=None):
     all_data = []
+
     for record in dataset:
         data = {}
         data["question"] = record["question"]
@@ -57,12 +60,21 @@ def dataset_to_jsonl(dataset, output_dir, split_ratio=0.9, skill=None):
         data["text"] = create_prompt(data["question"], data["answer"], skill)
         all_data.append(data)
 
-    random.seed(17)
-    random.shuffle(all_data)
-    split = int(len(all_data) * split_ratio)
+    if len(all_data) > target_size:
+        random.seed(SEED)
+        random.shuffle(all_data)
+        all_data = all_data[:target_size]
 
-    train_data = all_data[:split]
-    dev_data = all_data[split:]
+    return all_data
+
+
+def save_dataset(data, output_dir, split_ratio=0.9):
+    random.seed(17)
+    random.shuffle(data)
+    split = int(len(data) * split_ratio)
+
+    train_data = data[:split]
+    dev_data = data[split:]
     train_file = os.path.join(output_dir, "train.jsonl")
     dev_file = os.path.join(output_dir, "dev.jsonl")
     os.makedirs(os.path.dirname(output_dir), exist_ok=True)
@@ -85,6 +97,7 @@ if __name__ == "__main__":
 
     data_dir = "../poc_data"
     train_dev_ratio = 0.9
+    target_size = 2000
 
     skills = ["Sorting", "Greedy algorithms", "Data structures"]
     train_data = load_dataset('BAAI/TACO', split='train', skills=skills)
@@ -94,9 +107,10 @@ if __name__ == "__main__":
               "Data structures": "data_structures",
               None: "all"}
     
-    for category, value in splits.items():
+    for skill, value in splits.items():
         output_dir = os.path.join(data_dir, value)
-        dataset_to_jsonl(train_data, output_dir, train_dev_ratio, category)
+        data = convert_dataset(train_data, target_size, skill)
+        save_dataset(data, output_dir, train_dev_ratio)
         print("Wrote to", value)
 
     print("Datasets successfully converted!")
