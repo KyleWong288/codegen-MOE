@@ -2,7 +2,7 @@ export TRANSFORMERS_NO_ADVISORY_WARNINGS=1
 export TOKENIZERS_PARALLELISM=0
 RUN_NAME=dsc_sorting_cosine
 MODEL_NAME=dsc-6.7b-instruct
-DATA_PATH=../../dsc_limit_data/sorting
+DATA_PATH=../../dsc_limit_data/greedy
 
 CUDA_VISIBLE_DEVICES=1,2,3,4,5,6,7 python train.py \
     --run_name $RUN_NAME \
@@ -10,7 +10,7 @@ CUDA_VISIBLE_DEVICES=1,2,3,4,5,6,7 python train.py \
     --data_path $DATA_PATH \
     --max_seq_length 2048 \
     --num_epochs 8 \
-    --learning_rate 5e-4 \
+    --learning_rate 1e-5 \
     --batch_size 4 \
     --gradient_accumulation_steps 2 \
     --evaluation_strategy steps \

@@ -5,15 +5,14 @@ import os
 import random
 import re
 import json
-from datasets import load_dataset, load_from_disk
+from datasets import load_dataset
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, GenerationConfig
 from tqdm import tqdm
 
 
-LLAMA_MODEL_DICT = {
-    "codellama": "codellama/CodeLlama-7b-hf",
-    "codellama_python": "codellama/CodeLlama-7b-Python-hf"
+DSC_MODEL_DICT = {
+    "dsc-6.7b-instruct": "deepseek-ai/deepseek-coder-6.7b-instruct",
 }
 SKILL_DICT = {
     "sorting": ["Sorting"],
@@ -21,29 +20,27 @@ SKILL_DICT = {
     "data_structures": ["Data structures"],
     "all": ["Sorting", "Greedy algorithms", "Data structures"]
 }
-EOF_STRINGS = ["\nQUESTION", "\n---", "\nANSWER", "<|endoftext|>"]
-
+EOF_STRINGS = ["### Response:", "\n###", "\nQUESTION", "\n---", "\nANSWER", "<|endoftext|>", "<|EOT|>"]
+SEED = 17
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--run_name", default='local-test', type=str)
-parser.add_argument("--model_name", type=str, help="the model name", default="codellama_python")
+parser.add_argument("--model_name", type=str, help="the model name", default="dsc-6.7b-instruct")
 parser.add_argument("--do_sample", type=bool, default=True, help="Enable sampling")
 parser.add_argument("--temperature", type=float, default=0.6, help="Sampling softmax temperature")
 parser.add_argument("--top_p", type=float, default=0.95, help="Nucleus filtering (top-p) before sampling (<=0.0: no filtering)")
-parser.add_argument("--num_return_sequences", type=int, default=1, help="The number of samples to generate")
+parser.add_argument("--num_return_sequences", type=int, default=20, help="The number of samples to generate")
 parser.add_argument("--max_new_tokens", type=int, default=800, help="The maximum number of tokens to generate")
-parser.add_argument("--base_model_name", type=str, help="the base model name", default="codellama/CodeLlama-7b-Python-hf")
-parser.add_argument("--checkpoint_path", type=str, help="the checkpoint path", default="./../checkpoints/Llama-2-7b-chat-hf")
+parser.add_argument("--checkpoint_path", type=str, help="the checkpoint path", default="./finetuned_models/run_name")
 parser.add_argument("--load_in_8bit", action='store_true', help="load the model in 8 bits precision", default=True)
 parser.add_argument("--trust_remote_code", type=bool, default=True, help="Enable `trust_remote_code`")
 parser.add_argument("--skill", type=str, default="all", help="the skill to test on")
 args = parser.parse_args()
 
 
-def load_pretrained_llama_model(args):
+def load_pretrained_dsc_model(args):
     model = AutoModelForCausalLM.from_pretrained(
-        LLAMA_MODEL_DICT[args.model_name],
-        quantization_config = BitsAndBytesConfig(load_in_8bit = True),
+        DSC_MODEL_DICT[args.model_name],
         device_map = "auto",
         trust_remote_code = args.trust_remote_code,
         torch_dtype = torch.bfloat16
@@ -51,10 +48,9 @@ def load_pretrained_llama_model(args):
     return model
 
 
-def load_finetuned_llama_model(args):
+def load_finetuned_dsc_model(args):
     base_model = AutoModelForCausalLM.from_pretrained(
-        LLAMA_MODEL_DICT[args.model_name],
-        quantization_config = BitsAndBytesConfig(load_in_8bit = True),
+        DSC_MODEL_DICT[args.model_name],
         device_map = "auto",
         trust_remote_code = args.trust_remote_code,
         torch_dtype = torch.bfloat16
@@ -81,41 +77,54 @@ def set_random_seed(seed):
         torch.manual_seed(seed)
 
 
-def decode(tokenizer, raw_text_len, output):
-    sents = []
-    for tokens in output:
-        tokens = tokens.cpu().numpy().tolist()
-        sent = tokenizer.decode(tokens[raw_text_len:], skip_special_tokens=True)
-        sents.append(sent)
-    return sents
+# Creates the finalized prompt
+# Using "### Instruction" and "### Response" for DeepSeek Coder
+def create_prompt(question, skill=None):
+    dsc_header = "You are an AI programming assistant, utilizing the DeepSeek Coder model, developed by DeepSeek Company, and you only answer questions related to computer science. For politically sensitive questions, security and privacy issues, and other non-computer science questions, you will refuse to answer."
+    instruction = "Write a Python program that solves the following question."
+    if skill == "Sorting":
+        instruction += " Your program should use sorting."
+    elif skill == "Greedy algorithms":
+        instruction += " Your program should use a greedy algorithm."
+    elif skill == "Data structures":
+        instruction += " Your program should use data structures."
+    res = "{} \n\n### Instruction: {} \nQuestion: {} \n\n### Response:\n".format(dsc_header, instruction, question)
+    return res
 
 
-def predict(model, tokenizer, gen_config, prompt, seed):
-    set_random_seed(seed)
-    input = tokenizer(prompt, truncation=False, return_tensors="pt").to("cuda:0")
+# gets generations, handles input encoding and output decoding
+def predict(model, tokenizer, gen_config, prompt):
+    set_random_seed(SEED)
+    res = []
+
+    input = tokenizer(prompt, truncation=False, return_tensors="pt").to(model.device)
     input_ids = input["input_ids"]
     raw_text_len = len(input_ids[0])
     with torch.no_grad():
-        output = model.generate(**input, generation_config=gen_config, pad_token_id=tokenizer.eos_token_id)
-        output = decode(tokenizer, raw_text_len, output)
-    return output[0]
+        output = model.generate(
+            **input,
+            generation_config=gen_config,
+            pad_token_id=tokenizer.eos_token_id,
+            eos_token_id=32021
+        )
+        for out in output:
+            res.append(tokenizer.decode(out[raw_text_len:], skip_special_tokens=True))
+    
+    return res
 
 
-def create_prompt(question, skill=None):
-    instruction = "Write a Python program that solves the following question."
-    if skill == "sorting":
-        instruction += " Your program should use sorting."
-    elif skill == "greedy":
-        instruction += " Your program should use a greedy algorithm."
-    elif skill == "data_structures":
-        instruction += " Your program should use data structures."
-    res = "### Instruction: {} \n\n ### Question: {} \n\n ### Answer:\n".format(instruction, question)
+# naively truncates eot tokens
+def clean_generations(generations):
+    res = []
+    for gen in generations:
+        clean_code = truncate_after_eof_strings(gen)
+        res.append(clean_code)
     return res
 
 
 if __name__ == "__main__":
 
-    # Load model and set up generation config
+    # Load model and set up model gen config
     generation_config = GenerationConfig(
         do_sample = args.do_sample,
         temperature = args.temperature,
@@ -123,44 +132,39 @@ if __name__ == "__main__":
         num_return_sequences = args.num_return_sequences, 
         max_new_tokens = args.max_new_tokens
     )
-    model = load_finetuned_llama_model(args)
-    tokenizer = AutoTokenizer.from_pretrained(LLAMA_MODEL_DICT[args.model_name])
+    model = load_finetuned_dsc_model(args)
+    tokenizer = AutoTokenizer.from_pretrained(DSC_MODEL_DICT[args.model_name])
     tokenizer.pad_token = tokenizer.eos_token
 
     # Load test data and set up evaluation parameters
     skills = SKILL_DICT[args.skill]
-    print("SKILLS:", skills)
     test_data = load_dataset('BAAI/TACO', split='test', skills=skills)
-    print(len(test_data))
+    print("Skills tested:", skills)
     
     output_file = f"./output/{args.model_name}/{args.run_name}_late.json"
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
     output = []
 
-    # mini test
-    # question = "Complete the method which accepts an array of integers, and returns one of the following:\n\n* `\"yes, ascending\"` - if the numbers in the array are sorted in an ascending order\n* `\"yes, descending\"` - if the numbers in the array are sorted in a descending order\n* `\"no\"` - otherwise\n\n\nYou can assume the array will always be valid, and there will always be one correct answer"
-    # prompt = create_prompt(question)
-    # answer = predict(model, tokenizer, generation_config, prompt, 42)
-    # answer = truncate_after_eof_strings(answer)
-    # print("Answer:\n", answer)
+    target_difficulties = ["EASY", "MEDIUM", "MEDIUM_HARD"]
 
-    n_samples = 20
-    
+    cnt = 0
+
     for idx, sample in enumerate(test_data):
-        if sample["difficulty"] != "EASY":
+        if sample["difficulty"] not in target_difficulties:
             continue
         print("ON:", idx)
         prompt = create_prompt(sample["question"])
         print(prompt)
         results = {"task_id": idx, "prompt": prompt}
-        generations = []
-        for i in tqdm(range(n_samples)):
-            seed = i
-            generation = predict(model, tokenizer, generation_config, prompt, seed)
-            clean_code = truncate_after_eof_strings(generation)
-            generations.append(clean_code)
+
+        generations = predict(model, tokenizer, generation_config, prompt)
+        generations = clean_generations(generations)
         results["output"] = generations
         output.append(results)
+
+        cnt += 1
+        if cnt >= 2:
+            break
 
     with open(output_file, 'w') as f:
         json.dump(output, f, indent=4)

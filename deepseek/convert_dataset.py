@@ -17,7 +17,7 @@ def convert_str_list(input):
 # Using "### Instruction" and "### Response" for DeepSeek Coder
 # TODO: experiment with removing the examples in the prompt
 def create_prompt(question, answer, skill=None):
-    dsc_statement = "You are an AI programming assistant, utilizing the DeepSeek Coder model, developed by DeepSeek Company, and you only answer questions related to computer science. For politically sensitive questions, security and privacy issues, and other non-computer science questions, you will refuse to answer."
+    dsc_header = "You are an AI programming assistant, utilizing the DeepSeek Coder model, developed by DeepSeek Company, and you only answer questions related to computer science. For politically sensitive questions, security and privacy issues, and other non-computer science questions, you will refuse to answer."
     instruction = "Write a Python program that solves the following question."
     if skill == "Sorting":
         instruction += " Your program should use sorting."
@@ -25,7 +25,7 @@ def create_prompt(question, answer, skill=None):
         instruction += " Your program should use a greedy algorithm."
     elif skill == "Data structures":
         instruction += " Your program should use data structures."
-    res = "{} \n\n### Instruction: {} \nQuestion: {} \n\n### Response:\n{} \n{}".format(dsc_statement, instruction, question, answer, EOT_TOKEN)
+    res = "{} \n\n### Instruction: {} \nQuestion: {} \n\n### Response:\n{} \n{}".format(dsc_header, instruction, question, answer, EOT_TOKEN)
     return res
 
 
