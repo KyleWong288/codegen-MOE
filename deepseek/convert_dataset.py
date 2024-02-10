@@ -3,9 +3,21 @@ import json
 import os
 import random
 from datasets import load_dataset
+from collections import defaultdict
 
 SEED = 17
 EOT_TOKEN = "<|EOT|>"
+SKILL_INSTRUCTION_MAP = {
+    "Amortized analysis": " Your program should use techniques that reduce time complexity, such as two pointers or sliding window.",
+    "Bit manipulation": " Your program should use bitwise operations.",
+    "Complete search": " Your program should use complete search or backtracking.",
+    "Data structures": " Your program should use data structures.", 
+    "Dynamic programming": " Your program should use dynamic programming.",
+    "Greedy algorithms": " Your program should use a greedy algorithm.",
+    "Range queries": " Your program should involve range queries, using prefix sums or a segment tree.",
+    "Sorting": " Your program should use sorting.",
+    None: "",
+}
 
 # Converts string representation of a list into an actual list
 def convert_str_list(input):
@@ -19,12 +31,7 @@ def convert_str_list(input):
 def create_prompt(question, answer, skill=None):
     dsc_header = "You are an AI programming assistant, utilizing the DeepSeek Coder model, developed by DeepSeek Company, and you only answer questions related to computer science. For politically sensitive questions, security and privacy issues, and other non-computer science questions, you will refuse to answer."
     instruction = "Write a Python program that solves the following question."
-    if skill == "Sorting":
-        instruction += " Your program should use sorting."
-    elif skill == "Greedy algorithms":
-        instruction += " Your program should use a greedy algorithm."
-    elif skill == "Data structures":
-        instruction += " Your program should use data structures."
+    instruction += SKILL_INSTRUCTION_MAP[skill]
     res = "{} \n\n### Instruction: {} \nQuestion: {} \n\n### Response:\n{} \n{}".format(dsc_header, instruction, question, answer, EOT_TOKEN)
     return res
 
@@ -42,7 +49,7 @@ def min_len_answer(answers):
 
 # DS Coder only works with instruction and output
 # Groups instruction and question into instruction
-# TODO: EDA for more data
+# TODO: EDA for more data??
 def convert_dataset(dataset, target_size, skill=None):
     all_data = []
 
@@ -54,8 +61,6 @@ def convert_dataset(dataset, target_size, skill=None):
         if not data["answer"]:
             continue
         data["skill_types"] = convert_str_list(record["skill_types"])
-        if skill and skill not in data["skill_types"]:
-            continue
         data["tags"] = convert_str_list(record["tags"])
         data["text"] = create_prompt(data["question"], data["answer"], skill)
         all_data.append(data)
@@ -97,19 +102,47 @@ if __name__ == "__main__":
 
     data_dir = "../dsc_limit_data"
     train_dev_ratio = 0.9
-    target_size = 2000
+    target_size = 1800
 
-    skills = ["Sorting", "Greedy algorithms", "Data structures"]
+    skills = [
+        "Amortized analysis",
+        "Bit manipulation",
+        "Complete search",
+        "Data structures",
+        "Dynamic programming",
+        "Greedy algorithms",
+        "Range queries",
+        "Sorting"
+    ]
+
     train_data = load_dataset('BAAI/TACO', split='train', skills=skills)
-    
-    splits = {"Sorting": "sorting", 
-              "Greedy algorithms": "greedy", 
-              "Data structures": "data_structures",
-              None: "all"}
+
+    splits = {
+        "Amortized analysis": "amortized",
+        "Bit manipulation": "bit_manipulation",
+        "Complete search": "complete_search",
+        "Data structures": "data_structures",
+        "Dynamic programming": "dp",
+        "Greedy algorithms": "greedy",
+        "Range queries": "range_queries",
+        "Sorting": "sorting",
+        None: "all"
+    }
+
+    print(type(train_data))
+
+    lists = list(train_data["skill_types"])
+    freq = defaultdict(int)
+    for l in lists:
+        l = convert_str_list(l)
+        for s in l:
+            freq[s] += 1
+    print(freq)
     
     for skill, value in splits.items():
         output_dir = os.path.join(data_dir, value)
-        data = convert_dataset(train_data, target_size, skill)
+        filtered_data = train_data.filter(lambda example: skill in example["skill_types"]) if skill else train_data
+        data = convert_dataset(filtered_data, target_size, skill)
         save_dataset(data, output_dir, train_dev_ratio)
         print("Wrote to", value)
         print("SAMPLE:")

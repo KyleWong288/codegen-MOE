@@ -1,10 +1,10 @@
 export TRANSFORMERS_NO_ADVISORY_WARNINGS=1
 export TOKENIZERS_PARALLELISM=0
-RUN_NAME=dsc_sorting_cosine
+RUN_NAME=dsc_dp_1800
 MODEL_NAME=dsc-6.7b-instruct
-DATA_PATH=../../dsc_limit_data/greedy
+DATA_PATH=../../dsc_limit_data/dp
 
-CUDA_VISIBLE_DEVICES=1,2,3,4,5,6,7 python train.py \
+CUDA_VISIBLE_DEVICES=1,2,3,4,5,6 python train.py \
     --run_name $RUN_NAME \
     --base_model $MODEL_NAME \
     --data_path $DATA_PATH \

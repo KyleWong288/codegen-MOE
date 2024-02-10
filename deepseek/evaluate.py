@@ -4,6 +4,7 @@ import multiprocessing
 import numpy as np
 from typing import Dict
 from datasets import load_dataset
+from tqdm import tqdm
 
 TIMEOUT = 10
 
@@ -46,7 +47,7 @@ def evaluate_generations(generations, samples, idx=None, debug=False):
     assert len(generations.keys()) == len(samples)
     results = {}
     idx = 0
-    for task_id, problem_generations in generations.items():
+    for task_id, problem_generations in tqdm(generations.items()):
         sample = samples[idx]
         res = []
         # loop over the generations
@@ -122,23 +123,27 @@ def compute_metrics(results, k_list=[1, 10, 100]):
 
 def main():
     # Initialize evaluation dataset with the same setup as generation
-    skills = ["Sorting", "Greedy algorithms", "Data structures"]
-    # skills = ["Sorting"]
-
-    target_difficulties = ["EASY", "MEDIUM", "MEDIUM_HARD"]
+    # skills = ["Sorting", "Greedy algorithms", "Data structures"]
+    skills = ["Greedy algorithms"]
+    target_difficulties = ["EASY"]
 
     test_data = load_dataset('BAAI/TACO', split='test', skills=skills)
     test_data = test_data.filter(lambda example: example["difficulty"] in target_difficulties)
 
-    # UPDATE THE RUN NAME
-    RUN_NAME = "dsc_all_test"
-    generation_file = f"output/dsc-6.7b-instruct/{RUN_NAME}.json"
+    # UPDATE SKILL and RUN NAME
+    SKILL = "greedy"
+    RUN_NAME = "dsc_all_cosine"
+    generation_file = f"output/dsc-6.7b-instruct/{SKILL}/{RUN_NAME}.json"
     generations = load_generation(generation_file)
 
     results = evaluate_generations(generations, test_data)
     metrics = compute_metrics(results)
+    metrics["skill"] = SKILL
+    metrics["run name"] = RUN_NAME
 
-    json.dump(metrics, open(f'evaluation_{RUN_NAME}.json', 'w'), indent=4)
+    output_file = f"./eval_results/{SKILL}/{RUN_NAME}.json"
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    json.dump(metrics, open(output_file, 'w'), indent=4)
 
 if __name__ == "__main__":
     main()
