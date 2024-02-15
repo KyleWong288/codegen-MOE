@@ -123,16 +123,27 @@ def compute_metrics(results, k_list=[1, 10, 100]):
 
 def main():
     # Initialize evaluation dataset with the same setup as generation
-    # skills = ["Sorting", "Greedy algorithms", "Data structures"]
-    skills = ["Greedy algorithms"]
+    # skills = [
+    #     "Amortized analysis",
+    #     "Bit manipulation",
+    #     "Complete search",
+    #     "Data structures",
+    #     "Dynamic programming",
+    #     "Greedy algorithms",
+    #     "Range queries",
+    #     "Sorting"
+    # ]
+
+    # UPDATE target skills and target difficulties
+    skills = ["Data structures"]
     target_difficulties = ["EASY"]
 
     test_data = load_dataset('BAAI/TACO', split='test', skills=skills)
     test_data = test_data.filter(lambda example: example["difficulty"] in target_difficulties)
 
     # UPDATE SKILL and RUN NAME
-    SKILL = "greedy"
-    RUN_NAME = "dsc_all_cosine"
+    SKILL = "data_structures"
+    RUN_NAME = "4000_dsc_data_structures"
     generation_file = f"output/dsc-6.7b-instruct/{SKILL}/{RUN_NAME}.json"
     generations = load_generation(generation_file)
 

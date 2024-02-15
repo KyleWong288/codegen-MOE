@@ -102,7 +102,7 @@ if __name__ == "__main__":
 
     data_dir = "../dsc_limit_data"
     train_dev_ratio = 0.9
-    target_size = 1800
+    target_size = 4000
 
     skills = [
         "Amortized analysis",

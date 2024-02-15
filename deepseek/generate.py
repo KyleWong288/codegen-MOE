@@ -14,11 +14,28 @@ from tqdm import tqdm
 DSC_MODEL_DICT = {
     "dsc-6.7b-instruct": "deepseek-ai/deepseek-coder-6.7b-instruct",
 }
-SKILL_DICT = {
-    "sorting": ["Sorting"],
-    "greedy": ["Greedy algorithms"],
-    "data_structures": ["Data structures"],
-    "all": ["Sorting", "Greedy algorithms", "Data structures"]
+# shell friendly skill names
+SKILL_LIST = ["amortized", "bit_maniuplation", "complete_search", "data_structures", "dp", "greedy", "range_queries", "sorting"]
+SKILL_MAP = {
+    "amortized": ["Amortized analysis"],
+    "bit_maniuplation": ["Bit manipulation"], 
+    "complete_search": ["Complete search"], 
+    "data_structures": ["Data structures"], 
+    "dp": ["Dynamic programming"], 
+    "greedy": ["Greedy algorithms"], 
+    "range_queries": ["Range queries"], 
+    "sorting": ["Sorting"]
+}
+SKILL_INSTRUCTION_MAP = {
+    "amortized": " Your program should use techniques that reduce time complexity, such as two pointers or sliding window.",
+    "bit_manipulation": " Your program should use bitwise operations.",
+    "complete_search": " Your program should use complete search or backtracking.",
+    "data_structures": " Your program should use data structures.", 
+    "dp": " Your program should use dynamic programming.",
+    "greedy": " Your program should use a greedy algorithm.",
+    "range_queries": " Your program should involve range queries, using prefix sums or a segment tree.",
+    "sorting": " Your program should use sorting.",
+    None: "",
 }
 EOF_STRINGS = ["### Response:", "\n###", "\nQUESTION", "\n---", "\nANSWER", "<|endoftext|>", "<|EOT|>"]
 SEED = 17
@@ -35,7 +52,7 @@ parser.add_argument("--max_new_tokens", type=int, default=800, help="The maximum
 parser.add_argument("--checkpoint_path", type=str, help="the checkpoint path", default="./finetuned_models/run_name")
 parser.add_argument("--load_in_8bit", action='store_true', help="load the model in 8 bits precision", default=True)
 parser.add_argument("--trust_remote_code", type=bool, default=True, help="Enable `trust_remote_code`")
-parser.add_argument("--skill", type=str, default="all", help="the skill to test on")
+parser.add_argument("--skill", type=str, default="all", help="the skill to test on", choices=SKILL_LIST)
 args = parser.parse_args()
 
 
@@ -78,18 +95,14 @@ def set_random_seed(seed):
         torch.manual_seed(seed)
 
 
+
 # Creates the finalized prompt
 # Using "### Instruction" and "### Response" for DeepSeek Coder
-# Toggle the if else part if your model was trained on all skills
 def create_prompt(question):
     dsc_header = "You are an AI programming assistant, utilizing the DeepSeek Coder model, developed by DeepSeek Company, and you only answer questions related to computer science. For politically sensitive questions, security and privacy issues, and other non-computer science questions, you will refuse to answer."
     instruction = "Write a Python program that solves the following question."
-    # if args.skill == "sorting":
-    #     instruction += " Your program should use sorting."
-    # elif args.skill == "greedy":
-    #     instruction += " Your program should use a greedy algorithm."
-    # elif args.skill == "data_structures":
-    #     instruction += " Your program should use data structures."
+    if "all" not in args.run_name:
+        instruction += SKILL_INSTRUCTION_MAP[args.skill]
     res = "{} \n\n### Instruction: {} \nQuestion: {} \n\n### Response:\n".format(dsc_header, instruction, question)
     return res
 
@@ -118,15 +131,6 @@ def predict(model, tokenizer, gen_config, prompt):
     return res
 
 
-# naively truncates eot tokens
-def clean_generations(generations):
-    res = []
-    for gen in generations:
-        clean_code = truncate_after_eof_strings(gen)
-        res.append(clean_code)
-    return res
-
-
 if __name__ == "__main__":
 
     # Load model and set up model gen config
@@ -142,7 +146,7 @@ if __name__ == "__main__":
     tokenizer.pad_token = tokenizer.eos_token
 
     # Load test data and set up evaluation parameters
-    skills = SKILL_DICT[args.skill]
+    skills = SKILL_MAP[args.skill]
     target_difficulties = ["EASY"]
     test_data = load_dataset('BAAI/TACO', split='test', skills=skills)
     test_data = test_data.filter(lambda example: example["difficulty"] in target_difficulties)
@@ -159,7 +163,6 @@ if __name__ == "__main__":
         print(prompt)
         results = {"task_id": idx, "prompt": prompt}
         generations = predict(model, tokenizer, generation_config, prompt)
-        # generations = clean_generations(generations)
         results["output"] = generations
         output.append(results)
 
