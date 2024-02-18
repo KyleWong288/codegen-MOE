@@ -51,8 +51,6 @@ def main(args):
     dev_file = os.path.join(args.data_path, "dev.jsonl")
     train_data = load_dataset("json", data_files=train_file, split="train", download_mode="force_redownload")
     eval_data = load_dataset("json", data_files=dev_file, split="train", download_mode="force_redownload")
-    # tokenized_train_data = train_data.map(preprocess, batched=True)
-    # tokenized_eval_data = eval_data.map(preprocess, batched=True)
     tokenized_train_data = train_data.map(lambda examples: preprocess(examples, tokenizer), batched=True)
     tokenized_eval_data = eval_data.map(lambda examples: preprocess(examples, tokenizer), batched=True)
     
@@ -69,7 +67,7 @@ def main(args):
         num_train_epochs=args.num_epochs,
         learning_rate=args.learning_rate,
         per_device_train_batch_size=args.batch_size,
-        per_device_eval_batch_size=1,
+        per_device_eval_batch_size=args.batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         evaluation_strategy=args.evaluation_strategy,
         eval_steps=args.eval_steps,

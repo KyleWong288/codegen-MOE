@@ -8,8 +8,7 @@ CUDA_VISIBLE_DEVICES=1,2,3,4 python train.py \
     --run_name $RUN_NAME \
     --base_model $MODEL_NAME \
     --data_path $DATA_PATH \
-    --max_seq_length 2048 \
-    --num_epochs 3 \
+    --num_epochs 10 \
     --learning_rate 2e-5 \
     --batch_size 16 \
     --gradient_accumulation_steps 1 \
