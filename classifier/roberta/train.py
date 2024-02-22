@@ -5,7 +5,13 @@ import os
 import torch
 import wandb
 from datasets import load_dataset
-from transformers import AutoModelForSequenceClassification, AutoTokenizer, DataCollatorWithPadding, Trainer, TrainingArguments
+from transformers import (
+    AutoModelForSequenceClassification, 
+    AutoTokenizer, 
+    DataCollatorWithPadding, 
+    Trainer, 
+    TrainingArguments
+)
 
 ID2LABEL = {
     0: "Amortized analysis",
@@ -55,7 +61,7 @@ def main(args):
     tokenized_eval_data = eval_data.map(lambda examples: preprocess(examples, tokenizer), batched=True)
     
 
-    # Configure model:
+    # Load model:
     model = AutoModelForSequenceClassification.from_pretrained(
         args.base_model, num_labels=8, id2label=ID2LABEL, label2id=LABEL2ID
     )

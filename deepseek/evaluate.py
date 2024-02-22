@@ -135,16 +135,18 @@ def main():
     # ]
 
     # UPDATE target skills and target difficulties
-    skills = ["Complete search"]
-    target_difficulties = ["EASY", "MEDIUM"]
+    
+    skills = ["Sorting"]
+    target_difficulties = ["EASY"]
 
     test_data = load_dataset('BAAI/TACO', split='test', skills=skills)
     test_data = test_data.filter(lambda example: example["difficulty"] in target_difficulties)
 
     # UPDATE SKILL and RUN NAME
-    SKILL = "complete_search"
-    RUN_NAME = "1800_dsc_all"
+    SKILL = "sorting"
+    RUN_NAME = "base"
     generation_file = f"output/dsc-6.7b-instruct/{SKILL}/{RUN_NAME}.json"
+    print("Evaluating generation file:", generation_file)
     generations = load_generation(generation_file)
 
     results = evaluate_generations(generations, test_data)

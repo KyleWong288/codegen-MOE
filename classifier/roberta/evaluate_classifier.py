@@ -59,8 +59,3 @@ if __name__ == "__main__":
 
     with open(output_file, 'w') as f:
         json.dump(res, f, indent=4)
-
-
-
-
-    

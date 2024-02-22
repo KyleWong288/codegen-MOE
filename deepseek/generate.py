@@ -1,10 +1,10 @@
-import numpy as np
-import torch
 import argparse
+import json
+import numpy as np
 import os
 import random
 import re
-import json
+import torch
 from datasets import load_dataset
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, GenerationConfig
@@ -53,6 +53,7 @@ parser.add_argument("--checkpoint_path", type=str, help="the checkpoint path", d
 parser.add_argument("--load_in_8bit", action='store_true', help="load the model in 8 bits precision", default=True)
 parser.add_argument("--trust_remote_code", type=bool, default=True, help="Enable `trust_remote_code`")
 parser.add_argument("--skill", type=str, default="all", help="the skill to test on", choices=SKILL_LIST)
+parser.add_argument("--use_base_model", type=bool, default=False, help="Uses the base model out of box from hf")
 args = parser.parse_args()
 
 
@@ -63,27 +64,36 @@ def load_pretrained_dsc_model(args):
         trust_remote_code = args.trust_remote_code,
         torch_dtype = torch.bfloat16
     )
+    print(f"Base Model {args.model_name} loaded")
     return model
 
 
 def load_finetuned_dsc_model(args):
-    base_model = AutoModelForCausalLM.from_pretrained(
-        DSC_MODEL_DICT[args.model_name],
-        device_map = "auto",
-        trust_remote_code = args.trust_remote_code,
-        torch_dtype = torch.bfloat16
-    )
-    print(f"Base Model {args.model_name} loaded")
+    base_model = load_pretrained_dsc_model(args)
     ft_model = PeftModel.from_pretrained(base_model, args.checkpoint_path)
     print(f"Finetuned Model {args.checkpoint_path} loaded")
     return ft_model
 
 
-def truncate_after_eof_strings(text):
+def clean_ft_model(text):
     pattern = '|'.join(re.escape(s) for s in EOF_STRINGS)
     match = re.search(pattern, text)
     if match:
         return text[:match.start()]
+    else:
+        return text
+
+
+def clean_base_model(text):
+    # Extracts the code block in ``` ``` and erases the "python\n"
+    pattern = r"```(.*?)```"
+    prefix = "python\n"
+    match = re.search(pattern, text, re.DOTALL)
+    if match:
+        res = match.group(1)
+        if res.startswith(prefix):
+            res = res[len(prefix):]
+        return res
     else:
         return text
 
@@ -95,8 +105,7 @@ def set_random_seed(seed):
         torch.manual_seed(seed)
 
 
-
-# Creates the finalized prompt
+# Creates the prompt for a fine-tuned model
 # Using "### Instruction" and "### Response" for DeepSeek Coder
 def create_prompt(question):
     dsc_header = "You are an AI programming assistant, utilizing the DeepSeek Coder model, developed by DeepSeek Company, and you only answer questions related to computer science. For politically sensitive questions, security and privacy issues, and other non-computer science questions, you will refuse to answer."
@@ -107,7 +116,16 @@ def create_prompt(question):
     return res
 
 
-# gets generations, handles input encoding and output decoding
+# Creates the prompt for the base dsc model
+# Using "### Instruction" and "### Response" for DeepSeek Coder
+def create_prompt_base(question):
+    dsc_header = "You are an AI programming assistant, utilizing the DeepSeek Coder model, developed by DeepSeek Company, and you only answer questions related to computer science. For politically sensitive questions, security and privacy issues, and other non-computer science questions, you will refuse to answer."
+    instruction = "Write a Python program that solves the following question. Only output your code, and do not provide an explanation."
+    res = "{} \n\n### Instruction: {} \nQuestion: {} \n\n### Response:\n".format(dsc_header, instruction, question)
+    return res
+
+
+# Gets NUM_SAMPLES generations, handles input encoding and output decoding
 def predict(model, tokenizer, gen_config, prompt):
     set_random_seed(SEED)
     res = []
@@ -125,7 +143,7 @@ def predict(model, tokenizer, gen_config, prompt):
                 eos_token_id=32021
             )
             output = tokenizer.decode(output[0][raw_text_len:], skip_special_tokens=True)
-            clean_code = truncate_after_eof_strings(output)
+            clean_code = clean_base_model(output) if args.use_base_model else clean_ft_model(output)
             res.append(clean_code)
     
     return res
@@ -133,7 +151,7 @@ def predict(model, tokenizer, gen_config, prompt):
 
 if __name__ == "__main__":
 
-    # Load model and set up model gen config
+    # Load model and set up gen config
     generation_config = GenerationConfig(
         do_sample = args.do_sample,
         temperature = args.temperature,
@@ -141,33 +159,38 @@ if __name__ == "__main__":
         num_return_sequences = args.num_return_sequences, 
         max_new_tokens = args.max_new_tokens
     )
-    model = load_finetuned_dsc_model(args)
+    model = load_pretrained_dsc_model(args) if args.use_base_model else load_finetuned_dsc_model(args)
     tokenizer = AutoTokenizer.from_pretrained(DSC_MODEL_DICT[args.model_name])
     tokenizer.pad_token = tokenizer.eos_token
 
     # Load test data and set up evaluation parameters
     skills = SKILL_MAP[args.skill]
-    target_difficulties = ["EASY"]
+    target_difficulties = ["EASY", "MEDIUM"]
     test_data = load_dataset('BAAI/TACO', split='test', skills=skills)
     test_data = test_data.filter(lambda example: example["difficulty"] in target_difficulties)
     print("Skills tested:", skills)
     print("Difficulties test:", target_difficulties)
     
-    output_file = f"./output/{args.model_name}/{args.skill}/{args.run_name}.json"
+    # Configure output file
+    if args.use_base_model:
+        output_file = f"./output/{args.model_name}/{args.skill}/base.json"
+    else:
+        output_file = f"./output/{args.model_name}/{args.skill}/{args.run_name}.json"
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
     output = []
 
+    # Generate output
     for idx, sample in enumerate(test_data):
         print(f"ON {idx} OF {len(test_data)}")
-        prompt = create_prompt(sample["question"])
+        prompt = create_prompt_base(sample["question"]) if args.use_base_model else create_prompt(sample["question"])
         print(prompt)
         results = {"task_id": idx, "prompt": prompt}
         generations = predict(model, tokenizer, generation_config, prompt)
         results["output"] = generations
         output.append(results)
 
-        with open(output_file, 'w') as f:
-            json.dump(output, f, indent=4)
+        with open(output_file, 'w') as file:
+            json.dump(output, file, indent=4)
 
     print("DONE GENERATING!")
     

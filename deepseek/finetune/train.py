@@ -65,7 +65,7 @@ def main(args):
         lora_alpha=64,
         lora_dropout=0.1,
         target_modules=lora_module_dict[args.base_model],
-        bias='none',
+        bias="none",
     )
 
     # setup trainer
