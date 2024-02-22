@@ -4,4 +4,5 @@ checkpoints/
 *eval_results/
 *finetuned_models/
 *output/
+*.env
 wandb/

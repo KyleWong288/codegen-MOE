@@ -15,6 +15,6 @@ CUDA_VISIBLE_DEVICES=4,5,6,7 python train.py \
     --evaluation_strategy steps \
     --eval_steps 100 \
     --warmup_steps 10 \
-    --log_interval 10 \
+    --log_interval 5 \
     --scheduler cosine \
     --max_seq_length 1024 \
