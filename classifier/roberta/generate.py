@@ -22,10 +22,21 @@ def set_random_seed(seed):
         torch.manual_seed(seed)
 
 
+# extracts the highest output logits
+def get_labels(probs):
+    res = []
+    if args.eval_type == 0:
+        pass
+    else:
+        res = sorted(range(len(probs)), key=lambda i: probs[i], reverse=True)[:args.eval_type]
+    return res
+
+
+# eval_type is the fixed number of output labels you want, 0 for any amount
 if __name__ == "__main__":
 
     test_file = "./data/test.jsonl"
-    output_file = f"./eval_results/{args.run_name}.json"
+    output_file = f"./output/{args.run_name}.json"
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
     # Load the model and tokenizer:
@@ -38,24 +49,18 @@ if __name__ == "__main__":
     texts = test_data["text"]
     
     # Evaluate:
-    res = {"acc": 0, "results": []}
+    # each result struct has {idx, gt labels, output softmax}
+    res = {"results": []}
     set_random_seed(17)
-    correct = 0
     for i in tqdm(range(len(texts))):
-        label_list = labels[i]
+        gt_labels = labels[i]
         input = texts[i]
         tokenized_input = tokenizer(input, truncation=True, return_tensors="pt")
         with torch.no_grad():
             output = model(**tokenized_input)
-        pred_probs = torch.softmax(output.logits, dim=1)
-        pred_label = pred_probs.argmax().item()
-        if pred_label in label_list:
-            correct += 1
-        res["results"].append({"index": i, "pred": pred_label, "gt": label_list})
+        pred_probs = torch.softmax(output.logits, dim=1).tolist()
+        res["results"].append({"index": i, "gt": gt_labels, "softmax": pred_probs})
+        
 
-    acc = correct / len(texts)
-    print("ACCURACY:", acc)
-    res["acc"] = acc
-
-    with open(output_file, 'w') as f:
-        json.dump(res, f, indent=4)
+    with open(output_file, 'w') as file:
+        json.dump(res, file, indent=4)
