@@ -100,3 +100,4 @@ if __name__ == "__main__":
         json.dump(output, file, indent=4)
 
     print("DONE EVALUATING!")
+

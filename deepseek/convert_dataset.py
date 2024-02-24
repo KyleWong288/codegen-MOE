@@ -2,6 +2,7 @@ import ast
 import json
 import os
 import random
+import re
 from datasets import load_dataset
 from collections import defaultdict
 
@@ -32,7 +33,7 @@ def create_prompt(question, answer, skill=None):
     dsc_header = "You are an AI programming assistant, utilizing the DeepSeek Coder model, developed by DeepSeek Company, and you only answer questions related to computer science. For politically sensitive questions, security and privacy issues, and other non-computer science questions, you will refuse to answer."
     instruction = "Write a Python program that solves the following question."
     instruction += SKILL_INSTRUCTION_MAP[skill]
-    res = "{} \n\n### Instruction: {} \nQuestion: {} \n\n### Response:\n{} \n{}".format(dsc_header, instruction, question, answer, EOT_TOKEN)
+    res = "{} \n\n### Instruction: {} \nQuestion: {} \n\n### Response:\n{}".format(dsc_header, instruction, question, answer)
     return res
 
 
@@ -47,6 +48,39 @@ def min_len_answer(answers):
     return res
 
 
+# Erases the test cases and explanations from the question
+def clean_question(question):
+    res = question
+
+    # String match clean
+    targets = ["\nExamples", "\nExample 1:", "\n## Examples", "\nExample:", "\nExample\n", "\nExample \n", "\nExample :", "\nSample Input", "\nSAMPLE INPUT"]
+    for target in targets:
+        index = res.find(target)
+        if index != -1:
+            res = res[:index]
+
+    # Regex clean
+    pat0 = r'\n-+\s*Example'
+    pat1 = r'\n-+\s*Examples'
+    pat2 = r'\n-+\s*Sample Input'
+    pat3 = r'\n-+\s*Example Input'
+    regex_patterns = [pat0, pat1, pat2, pat3]
+    for pattern in regex_patterns:
+        res = re.split(pattern, res, maxsplit=1)[0]
+
+    return res
+
+
+# Puts the code in the dsc format
+# Format is ```python <code> ```, and use 4 spaces instead of \t
+def reformat_code(code):
+    code += f"\n{EOT_TOKEN}"
+    spacing = "    "
+    code = code.replace("\t", spacing)
+    res = f"```python\n{code}\n```"
+    return res
+
+
 # DS Coder only works with instruction and output
 # Groups instruction and question into instruction
 # TODO: EDA for more data??
@@ -55,11 +89,12 @@ def convert_dataset(dataset, target_size, skill=None):
 
     for record in dataset:
         data = {}
-        data["question"] = record["question"]
+        data["question"] = clean_question(record["question"])
         data["answer"] = convert_str_list(record["solutions"])
         data["answer"] = min_len_answer(data["answer"])
         if not data["answer"]:
             continue
+        data["answer"] = reformat_code(data["answer"])
         data["skill_types"] = convert_str_list(record["skill_types"])
         data["tags"] = convert_str_list(record["tags"])
         data["text"] = create_prompt(data["question"], data["answer"], skill)
@@ -73,7 +108,7 @@ def convert_dataset(dataset, target_size, skill=None):
     return all_data
 
 
-def save_dataset(data, output_dir, split_ratio=0.9):
+def save_split_dataset(data, output_dir, split_ratio=0.9):
     random.seed(SEED)
     random.shuffle(data)
     split = int(len(data) * split_ratio)
@@ -100,7 +135,7 @@ def save_dataset(data, output_dir, split_ratio=0.9):
 # Splits dataset by tag/skill_type
 if __name__ == "__main__":
 
-    data_dir = "../dsc_limit_data"
+    data_dir = "../dsc_format_data"
     train_dev_ratio = 0.9
     target_size = 4000
 
@@ -143,7 +178,7 @@ if __name__ == "__main__":
         output_dir = os.path.join(data_dir, value)
         filtered_data = train_data.filter(lambda example: skill in example["skill_types"]) if skill else train_data
         data = convert_dataset(filtered_data, target_size, skill)
-        save_dataset(data, output_dir, train_dev_ratio)
+        save_split_dataset(data, output_dir, train_dev_ratio)
         print("Wrote to", value)
         print("SAMPLE:")
         print(data[0]["text"])

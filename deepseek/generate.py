@@ -143,6 +143,7 @@ def predict(model, tokenizer, gen_config, prompt):
                 eos_token_id=32021
             )
             output = tokenizer.decode(output[0][raw_text_len:], skip_special_tokens=True)
+            print(output)
             clean_code = clean_base_model(output) if args.use_base_model else clean_ft_model(output)
             res.append(clean_code)
     
