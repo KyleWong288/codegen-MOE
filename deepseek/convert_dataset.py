@@ -19,6 +19,14 @@ SKILL_INSTRUCTION_MAP = {
     "Sorting": " Your program should use sorting.",
     None: "",
 }
+DIFFICULTY_MAP = {
+    "EASY": 0,
+    "MEDIUM": 1,
+    "MEDIUM_HARD": 2,
+    "HARD": 3,
+    "VERY_HARD": 4,
+}
+
 
 # Converts string representation of a list into an actual list
 def convert_str_list(input):
@@ -63,8 +71,10 @@ def pick_random_answer(answers, max_chars=2000):
     return short_answers[idx]
 
 
+
+
 # Erases the test cases and explanations from the question
-def clean_question(question):
+def remove_examples(question):
     res = question
 
     # String match clean
@@ -86,6 +96,13 @@ def clean_question(question):
     return res
 
 
+# Cleans question format
+def clean_question(question):
+    question = question.replace("$", "")
+    question = question.replace("\\le", "<=")
+    return question
+
+
 # Puts the code in the dsc format
 # Format is ```python <code> ```, and use 4 spaces instead of \t
 def reformat_code(code):
@@ -101,6 +118,7 @@ def reformat_code(code):
 # TODO: EDA for more data??
 def convert_dataset(dataset, target_size, skill=None):
     all_data = []
+    random.seed(SEED)
 
     for record in dataset:
         data = {"text": None}
@@ -110,13 +128,15 @@ def convert_dataset(dataset, target_size, skill=None):
         if not data["answer"]:
             continue
         data["answer"] = reformat_code(data["answer"])
+        if record["difficulty"] == "UNKNOWN_DIFFICULTY":
+            continue
+        data["difficulty"] = DIFFICULTY_MAP[record["difficulty"]]
         data["skill_types"] = convert_str_list(record["skill_types"])
         data["tags"] = convert_str_list(record["tags"])
         data["text"] = create_prompt_base(data["question"], data["answer"], skill)
         all_data.append(data)
 
     if len(all_data) > target_size:
-        random.seed(SEED)
         random.shuffle(all_data)
         all_data = all_data[:target_size]
     
@@ -129,6 +149,7 @@ def save_split_dataset(data, output_dir, split_ratio=0.9):
     split = int(len(data) * split_ratio)
 
     train_data = data[:split]
+    train_data = sorted(train_data, key=lambda x: x["difficulty"])
     dev_data = data[split:]
     train_file = os.path.join(output_dir, "train.jsonl")
     dev_file = os.path.join(output_dir, "dev.jsonl")
@@ -147,10 +168,98 @@ def save_split_dataset(data, output_dir, split_ratio=0.9):
             file.write(json_line + '\n')
 
 
+
+# Multiple answers over different epochs
+def convert_dataset_multi(dataset, output_dir, target_size):
+
+    NUM_EPOCHS = 5
+    SPLIT_RATIO = 0.9
+
+    # Get the questions to use
+    records_use = []
+    for record in dataset:
+        data = {"text": None}
+        data["question"] = clean_question(record["question"])
+        data["answer"] = convert_str_list(record["solutions"])
+        data["answer_list"] = convert_str_list(record["solutions"])
+        if len(data["answer_list"]) == 0:
+            continue
+        if record["difficulty"] == "UNKNOWN_DIFFICULTY":
+            continue
+        data["difficulty"] = DIFFICULTY_MAP[record["difficulty"]]
+        data["skill_types"] = convert_str_list(record["skill_types"])
+        data["tags"] = convert_str_list(record["tags"])
+        data["text"] = create_prompt_base(data["question"], data["answer"], skill)
+        records_use.append(data)
+
+    if len(records_use) > target_size:
+        random.shuffle(records_use)
+        records_use = records_use[:target_size]
+
+    split = int(len(records_use) * SPLIT_RATIO)
+    train_records = records_use[:split]
+    train_records = sorted(train_records, key=lambda x: x["difficulty"])
+    dev_records = records_use[split:]
+
+    # Get training data for each epoch
+    all_data = [[] for _ in range(NUM_EPOCHS)]
+    for record in train_records:
+        for epoch in range(NUM_EPOCHS):
+            data = {"text": None}
+            data["question"] = record["question"]
+            data["answer"] = pick_random_answer(record["answer_list"])
+            if data["answer"] == None:
+                data["answer"] = record["answer_list"][0]
+            data["answer"] = reformat_code(data["answer"])
+            data["difficulty"] = record["difficulty"]
+            data["skill_types"] = record["skill_types"]
+            data["tags"] = record["tags"]
+            data["text"] = create_prompt_base(data["question"], data["answer"], skill)
+            all_data[epoch].append(data)
+    train_data = [ex for epoch in all_data for ex in epoch]
+
+    # Get validation data for each epoch
+    dev_data = []
+    for record in dev_records:
+        data = {"text": None}
+        data["question"] = record["question"]
+        data["answer"] = pick_random_answer(record["answer_list"])
+        if data["answer"] == None:
+            data["answer"] = record["answer_list"][0]
+        data["answer"] = reformat_code(data["answer"])
+        data["difficulty"] = record["difficulty"]
+        data["skill_types"] = record["skill_types"]
+        data["tags"] = record["tags"]
+        data["text"] = create_prompt_base(data["question"], data["answer"], skill)
+        dev_data.append(data)
+
+    # Write to output files
+    train_file = os.path.join(output_dir, "train.jsonl")
+    dev_file = os.path.join(output_dir, "dev.jsonl")
+    os.makedirs(os.path.dirname(train_file), exist_ok=True)
+    os.makedirs(os.path.dirname(dev_file), exist_ok=True)
+
+    with open(train_file, 'w') as file:
+        for data in train_data:
+            json_line = json.dumps(data)
+            file.write(json_line + '\n')
+
+    with open(dev_file, 'w') as file:
+        for data in dev_data:
+            json_line = json.dumps(data)
+            file.write(json_line + '\n')
+
+
+    print(train_data[0]["answer"])
+    print(train_data[3600]["answer"])
+    print(train_data[7200]["answer"])
+
+
+
 # Splits dataset by tag/skill_type
 if __name__ == "__main__":
 
-    data_dir = "../dsc_data"
+    data_dir = "../dsc_data_sorted_multians"
     train_dev_ratio = 0.9
     target_size = 4000
 
@@ -186,10 +295,11 @@ if __name__ == "__main__":
     for skill, value in splits.items():
         output_dir = os.path.join(data_dir, value)
         filtered_data = train_data.filter(lambda example: skill in example["skill_types"]) if skill else train_data
-        data = convert_dataset(filtered_data, target_size, skill)
-        save_split_dataset(data, output_dir, train_dev_ratio)
+        # data = convert_dataset(filtered_data, target_size, skill)
+        # save_split_dataset(data, output_dir, train_dev_ratio)
+        convert_dataset_multi(filtered_data, output_dir, target_size)
         print("Wrote to", value)
-        print("SAMPLE:")
-        print(data[0]["text"])
+        # print("SAMPLE:")
+        # print(data[2]["text"])
 
     print("Datasets successfully converted!")
