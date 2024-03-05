@@ -1,5 +1,5 @@
 from metrics.testing_util import run_test
-import json, os
+import ast, json, os
 import multiprocessing
 import numpy as np
 from typing import Dict
@@ -136,16 +136,27 @@ def main():
 
     # UPDATE target skills and target difficulties
     
-    skills = ["Sorting"]
+    skills = [
+        "Amortized analysis",
+        "Bit manipulation",
+        "Complete search",
+        "Data structures",
+        "Dynamic programming",
+        "Greedy algorithms",
+        "Range queries",
+        "Sorting"
+    ]
     target_difficulties = ["EASY"]
 
     test_data = load_dataset('BAAI/TACO', split='test', skills=skills)
     test_data = test_data.filter(lambda example: example["difficulty"] in target_difficulties)
+    test_data = test_data.filter(lambda example: len(example["starter_code"]) == 0)
+    test_data = test_data.select(range(50))    
 
     # UPDATE SKILL and RUN NAME
-    SKILL = "sorting"
-    RUN_NAME = "base"
-    generation_file = f"output/dsc-6.7b-instruct/{SKILL}/{RUN_NAME}.json"
+    SKILL = "all"
+    RUN_NAME = "ft-checkpoint-1000-clean"
+    generation_file = f"output/dsc-6.7b-base/{SKILL}/EASY/{RUN_NAME}.json"
     print("Evaluating generation file:", generation_file)
     generations = load_generation(generation_file)
 

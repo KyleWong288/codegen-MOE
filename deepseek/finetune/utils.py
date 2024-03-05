@@ -7,12 +7,18 @@ lora_module_dict = {
         'q_proj', 'k_proj', 'v_proj',
         'o_proj', 'gate_proj', 'up_proj', 'down_proj',
     ],
+    'dsc-6.7b-base': [
+        'q_proj', 'k_proj', 'v_proj',
+        'o_proj', 'gate_proj', 'up_proj', 'down_proj',
+    ]
 }
 
 
 def parse_model_name(name, from_remote=False):
     if name == "dsc-6.7b-instruct":
         return "deepseek-ai/deepseek-coder-6.7b-instruct"
+    elif name == "dsc-6.7b-base":
+        return "deepseek-ai/deepseek-coder-6.7b-base"
     else:
         raise ValueError(f"Undefined base model: {name}")
 

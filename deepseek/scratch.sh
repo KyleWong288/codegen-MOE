@@ -1,1 +1,1 @@
-CUDA_VISIBLE_DEVICES=1 python scratch_instruct.py
+CUDA_VISIBLE_DEVICES=2 python scratch.py

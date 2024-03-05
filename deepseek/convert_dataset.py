@@ -26,14 +26,20 @@ def convert_str_list(input):
     return res
 
 
-# Creates the finalized prompt
-# Using "### Instruction" and "### Response" for DeepSeek Coder
-# TODO: experiment with removing the examples in the prompt
+# Creates the finalized prompt, using "### Instruction" and "### Response" for DeepSeek Coder
 def create_prompt(question, answer, skill=None):
     dsc_header = "You are an AI programming assistant, utilizing the DeepSeek Coder model, developed by DeepSeek Company, and you only answer questions related to computer science. For politically sensitive questions, security and privacy issues, and other non-computer science questions, you will refuse to answer."
     instruction = "Write a Python program that solves the following question."
     instruction += SKILL_INSTRUCTION_MAP[skill]
     res = "{} \n\n### Instruction: {} \nQuestion: {} \n\n### Response:\n{}".format(dsc_header, instruction, question, answer)
+    return res
+
+
+# For the non-instruction tuned model
+def create_prompt_base(question, answer, skill=None):
+    instruction = "Write a Python program that solves the following question."
+    instruction += SKILL_INSTRUCTION_MAP[skill]
+    res = "### Instruction: {} \nQuestion: {} \n\n### Response:\n{}".format(instruction, question, answer)
     return res
 
 
@@ -46,6 +52,15 @@ def min_len_answer(answers):
         if (len(ans) < len(res)):
             res = ans
     return res
+
+
+# Picks a random answer under a certain length, always choosing the min len answer may create bias to shorter/simpler code
+def pick_random_answer(answers, max_chars=2000):
+    short_answers = [ans for ans in answers if len(ans) < max_chars]
+    if not short_answers:
+        return None
+    idx = random.randint(0, len(short_answers)-1)
+    return short_answers[idx]
 
 
 # Erases the test cases and explanations from the question
@@ -88,16 +103,16 @@ def convert_dataset(dataset, target_size, skill=None):
     all_data = []
 
     for record in dataset:
-        data = {}
+        data = {"text": None}
         data["question"] = clean_question(record["question"])
         data["answer"] = convert_str_list(record["solutions"])
-        data["answer"] = min_len_answer(data["answer"])
+        data["answer"] = pick_random_answer(data["answer"])
         if not data["answer"]:
             continue
         data["answer"] = reformat_code(data["answer"])
         data["skill_types"] = convert_str_list(record["skill_types"])
         data["tags"] = convert_str_list(record["tags"])
-        data["text"] = create_prompt(data["question"], data["answer"], skill)
+        data["text"] = create_prompt_base(data["question"], data["answer"], skill)
         all_data.append(data)
 
     if len(all_data) > target_size:
@@ -135,7 +150,7 @@ def save_split_dataset(data, output_dir, split_ratio=0.9):
 # Splits dataset by tag/skill_type
 if __name__ == "__main__":
 
-    data_dir = "../dsc_format_data"
+    data_dir = "../dsc_data"
     train_dev_ratio = 0.9
     target_size = 4000
 
@@ -152,27 +167,21 @@ if __name__ == "__main__":
 
     train_data = load_dataset('BAAI/TACO', split='train', skills=skills)
 
+    # splits = {
+    #     "Amortized analysis": "amortized",
+    #     "Bit manipulation": "bit_manipulation",
+    #     "Complete search": "complete_search",
+    #     "Data structures": "data_structures",
+    #     "Dynamic programming": "dp",
+    #     "Greedy algorithms": "greedy",
+    #     "Range queries": "range_queries",
+    #     "Sorting": "sorting",
+    #     None: "all"
+    # }
+
     splits = {
-        "Amortized analysis": "amortized",
-        "Bit manipulation": "bit_manipulation",
-        "Complete search": "complete_search",
-        "Data structures": "data_structures",
-        "Dynamic programming": "dp",
-        "Greedy algorithms": "greedy",
-        "Range queries": "range_queries",
-        "Sorting": "sorting",
         None: "all"
     }
-
-    print(type(train_data))
-
-    lists = list(train_data["skill_types"])
-    freq = defaultdict(int)
-    for l in lists:
-        l = convert_str_list(l)
-        for s in l:
-            freq[s] += 1
-    print(freq)
     
     for skill, value in splits.items():
         output_dir = os.path.join(data_dir, value)

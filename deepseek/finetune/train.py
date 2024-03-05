@@ -95,7 +95,7 @@ if __name__ == "__main__":
     parser.add_argument("--local_rank", default=0, type=int)
     parser.add_argument("--run_name", default='local-test', type=str)
     parser.add_argument("--num_workers", default=8, type=int)
-    parser.add_argument("--base_model", required=True, type=str, choices=["dsc-6.7b-instruct"])
+    parser.add_argument("--base_model", required=True, type=str, choices=["dsc-6.7b-base","dsc-6.7b-instruct"])
     parser.add_argument("--data_path", required=True, type=str)
     parser.add_argument("--max_seq_length", default=2048, type=int)
     parser.add_argument("--num_epochs", default=5, type=float)

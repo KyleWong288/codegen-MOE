@@ -15,10 +15,28 @@ def clean_base_model(text):
         return text
 
 
+def clean_base_model2(text):
+    p1 = "\n```python\n"
+    p2 = "```python\n"
+    prefixes = [p1, p2]
+    for pref in prefixes:
+        if text.startswith(pref):
+            text = text[len(pref):]
+    return text
+
+
+def clean_base_model3(text):
+    eot = "<|EOT|>"
+    idx = text.find(eot)
+    if idx != -1:
+        text = text[:idx]
+    return text
+
+
 if __name__ == "__main__":
     
-    input_file = "./output/dsc-6.7b-instruct/data_structures/base_copy.json"
-    output_file = "./output/dsc-6.7b-instruct/data_structures/clean_base.json"
+    input_file = "./output/dsc-6.7b-base/all/EASY/ft-checkpoint-1000.json"
+    output_file = "./output/dsc-6.7b-base/all/EASY/ft-checkpoint-1000-clean.json"
     res = []
 
     with open(input_file, 'r') as file:
@@ -31,7 +49,7 @@ if __name__ == "__main__":
         data["prompt"] = old_data["prompt"]
         data["output"] = []
         for old_code in old_data["output"]:
-            clean_code = clean_base_model(old_code)
+            clean_code = clean_base_model3(old_code)
             data["output"].append(clean_code)
         res.append(data)
 
