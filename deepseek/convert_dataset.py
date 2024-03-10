@@ -51,6 +51,13 @@ def create_prompt_base(question, answer, skill=None):
     return res
 
 
+# Creates the augmentation prompt for augmented with the dsc api model
+def create_prompt_augment(question, answer):
+    instruction = "You are given a programming question and its corresponding answer in Python code. Carefully read both the question and answer. After, develop a step by step approach for solving the problem. Do not actually write any code."
+    res = "### Instruction: {}\nQuestion: {}\nAnswer:\n{}\n### Response:\n".format(instruction, question, answer)
+    return res
+
+
 # Gets the min length solution, helps reduce max_seq_len
 def min_len_answer(answers):
     if not answers:
@@ -61,6 +68,7 @@ def min_len_answer(answers):
             res = ans
     return res
 
+LONGEST_ANS = 0
 
 # Picks a random answer under a certain length, always choosing the min len answer may create bias to shorter/simpler code
 def pick_random_answer(answers, max_chars=2000):
@@ -68,6 +76,8 @@ def pick_random_answer(answers, max_chars=2000):
     if not short_answers:
         return None
     idx = random.randint(0, len(short_answers)-1)
+    global LONGEST_ANS
+    LONGEST_ANS = max(LONGEST_ANS, len(short_answers[idx]))
     return short_answers[idx]
 
 
@@ -100,22 +110,26 @@ def remove_examples(question):
 def clean_question(question):
     question = question.replace("$", "")
     question = question.replace("\\le", "<=")
+    question = question.replace("\\ge", ">=")
+    question = question.replace("\u00a0", " ")
+    question = re.sub(r'\\textit\{.*?\}', "", question)
+    question = re.sub(r'\\textbf\{.*?\}', "", question)
+    question = re.sub(r'\\textttt\{.*?\}', "", question)
     return question
 
 
 # Puts the code in the dsc format
 # Format is ```python <code> ```, and use 4 spaces instead of \t
 def reformat_code(code):
-    code += f"\n{EOT_TOKEN}"
     spacing = "    "
     code = code.replace("\t", spacing)
-    res = f"```python\n{code}\n```"
+    res = f"```python\n{code}\n```\n"
+    res += EOT_TOKEN
     return res
 
 
 # DS Coder only works with instruction and output
 # Groups instruction and question into instruction
-# TODO: EDA for more data??
 def convert_dataset(dataset, target_size, skill=None):
     all_data = []
     random.seed(SEED)
@@ -172,7 +186,7 @@ def save_split_dataset(data, output_dir, split_ratio=0.9):
 # Multiple answers over different epochs
 def convert_dataset_multi(dataset, output_dir, target_size):
 
-    NUM_EPOCHS = 5
+    NUM_EPOCHS = 3
     SPLIT_RATIO = 0.9
 
     # Get the questions to use
@@ -250,16 +264,50 @@ def convert_dataset_multi(dataset, output_dir, target_size):
             file.write(json_line + '\n')
 
 
-    print(train_data[0]["answer"])
-    print(train_data[3600]["answer"])
-    print(train_data[7200]["answer"])
+# Only uses easy, medium, medium hard difficulties
+# Saves the entire dataset without splitting
+def convert_dataset_augment(dataset, output_dir, target_size):
+    all_data = []
+    random.seed(SEED)
 
+    for record in dataset:
+        data = {"text": None}
+        data["question"] = clean_question(record["question"])
+        data["answer"] = convert_str_list(record["solutions"])
+        data["answer"] = pick_random_answer(data["answer"])
+        if not data["answer"]:
+            continue
+        data["answer"] = reformat_code(data["answer"])
+        data["difficulty"] = DIFFICULTY_MAP[record["difficulty"]]
+        data["skill_types"] = convert_str_list(record["skill_types"])
+        data["tags"] = convert_str_list(record["tags"])
+        data["source"] = record["source"]
+        data["text"] = create_prompt_augment(data["question"], data["answer"])
+        all_data.append(data)
+
+    if len(all_data) > target_size:
+        random.shuffle(all_data)
+        all_data = all_data[:target_size]
+
+    print(len(all_data))
+    global LONGEST_ANS
+    print("LONGEST ANS:", LONGEST_ANS)
+
+    augment_file = os.path.join(output_dir, "augment.jsonl")
+    os.makedirs(os.path.dirname(augment_file), exist_ok=True)
+
+    with open(augment_file, 'w') as file:
+        for data in all_data:
+            json_line = json.dumps(data, indent=2)
+            file.write(json_line + '\n')
+
+    print(all_data[0]["text"])
 
 
 # Splits dataset by tag/skill_type
 if __name__ == "__main__":
 
-    data_dir = "../dsc_data_sorted_multians"
+    data_dir = "../dsc_augment_data"
     train_dev_ratio = 0.9
     target_size = 4000
 
@@ -274,7 +322,11 @@ if __name__ == "__main__":
         "Sorting"
     ]
 
-    train_data = load_dataset('BAAI/TACO', split='train', skills=skills)
+    difficulties = [
+        "EASY",
+    ]
+
+    train_data = load_dataset('BAAI/TACO', split='train', difficulties=difficulties)
 
     # splits = {
     #     "Amortized analysis": "amortized",
@@ -295,11 +347,11 @@ if __name__ == "__main__":
     for skill, value in splits.items():
         output_dir = os.path.join(data_dir, value)
         filtered_data = train_data.filter(lambda example: skill in example["skill_types"]) if skill else train_data
+        convert_dataset_augment(filtered_data, output_dir, target_size)
         # data = convert_dataset(filtered_data, target_size, skill)
         # save_split_dataset(data, output_dir, train_dev_ratio)
-        convert_dataset_multi(filtered_data, output_dir, target_size)
-        print("Wrote to", value)
+        # print("Wrote to", value)
         # print("SAMPLE:")
-        # print(data[2]["text"])
+        # print(data[0]["text"])
 
     print("Datasets successfully converted!")

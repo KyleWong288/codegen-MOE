@@ -47,7 +47,7 @@ def compute_pass_at_k(num_correct):
 
 if __name__ == "__main__":
 
-    result_dir = "./eval_results/dsc-6.7b-base/base/"
+    result_dir = "./eval_results/dsc-6.7b-instruct/dsc_clean_q/"
     # result_dir = "./eval_results/dsc-6.7b-base/4000_dsc_all-checkpoint-1000/"
     output_file = os.path.join(result_dir, "eval.json")
     os.makedirs(os.path.dirname(output_file), exist_ok=True)

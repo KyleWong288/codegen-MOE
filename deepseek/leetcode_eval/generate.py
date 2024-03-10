@@ -130,7 +130,7 @@ if __name__ == '__main__':
     parser.add_argument("--checkpoint", default='checkpoint-0', type=str)
     parser.add_argument('--model_name', type=str, default='dsc-6.7b-instruct')
     parser.add_argument('--data_path', type=str, default="./test_data/20240121-Jul_50.jsonl")
-    parser.add_argument("--temperature", type=float, default=0.3, help="Sampling softmax temperature")
+    parser.add_argument("--temperature", type=float, default=0.4, help="Sampling softmax temperature")
     parser.add_argument("--top_p", type=float, default=0.95, help="Nucleus filtering (top-p) before sampling (<=0.0: no filtering)")
     parser.add_argument("--max_new_tokens", type=int, default=1024, help="The maximum number of tokens to generate")
     parser.add_argument("--checkpoint_path", type=str, help="the checkpoint path", default="./finetuned_models/run_name")

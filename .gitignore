@@ -1,6 +1,7 @@
 __pycache__/
 checkpoints/
 *data/
+*dsc_data*/
 *eval_results/
 *finetuned_models/
 *output/
