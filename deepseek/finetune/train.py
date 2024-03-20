@@ -16,16 +16,25 @@ def main(args):
     # load model
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        load_in_8bit=True,
+        # load_in_8bit=True,
+        torch_dtype=torch.bfloat16,
         trust_remote_code=True,
         device_map="auto"
     )
     print(model)
     print("MODEL LOADED:", model_name)
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_name, 
+        padding_side="right",
+        use_fast=True,
+        trust_remote_code=True
+    )
     tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.padding_side = "right"
+
+    print("PAD Token:", tokenizer.pad_token, tokenizer.pad_token_id)
+    print("BOS Token", tokenizer.bos_token, tokenizer.bos_token_id)
+    print("EOS Token", tokenizer.eos_token, tokenizer.eos_token_id)
 
     # load data
     train_dataset, dev_dataset = load_dataset(args.data_path)

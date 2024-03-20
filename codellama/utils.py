@@ -2,18 +2,18 @@ import os
 import datasets
 
 lora_module_dict = {
-    'codellama': [
+    'codellama-7b': [
         'q_proj', 'k_proj', 'v_proj',
         'o_proj', 'gate_proj', 'up_proj', 'down_proj',
     ],
-    'codellama_python': [
+    'codellama-python-7b': [
         'q_proj', 'k_proj', 'v_proj',
         'o_proj', 'gate_proj', 'up_proj', 'down_proj',
     ],
-    'llama2-7b': [
+    'codellama-python-13b': [
         'q_proj', 'k_proj', 'v_proj',
         'o_proj', 'gate_proj', 'up_proj', 'down_proj',
-    ],
+    ]
 }
 
 

@@ -20,40 +20,40 @@ def main(args):
         trust_remote_code=True,
         device_map="auto"
     )
-    if args.local_rank == 0:
-        print(model)
+    print(model)
     print("MODEL LOADED:", model_name)
     
-    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_name, 
+        padding_side="right",
+        use_fast=True,
+        trust_remote_code=True
+    )
     tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.padding_side = "right"
 
     # load data
-    dataset_dir = os.path.join("../poc_data", args.dataset)
-    train_dataset, dev_dataset = load_dataset(dataset_dir)
-    print("DATASETS LOADED:", dataset_dir)
+    train_dataset, dev_dataset = load_dataset(args.data_path)
+    print("DATASETS LOADED:", args.data_path)
     
     training_args = TrainingArguments(
         output_dir=f'./finetuned_models/{args.run_name}',
+        dataloader_num_workers=args.num_workers,
         logging_steps=args.log_interval,
         num_train_epochs=args.num_epochs,
+        learning_rate=args.learning_rate,
         per_device_train_batch_size=args.batch_size,
         per_device_eval_batch_size=args.batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
-        dataloader_num_workers=args.num_workers,
-        learning_rate=args.learning_rate,
-        weight_decay=args.weight_decay,
-        warmup_ratio=args.warmup_ratio,
-        lr_scheduler_type=args.scheduler,
-        save_steps=args.eval_steps,
-        eval_steps=args.eval_steps,
-        fp16=True,
         evaluation_strategy=args.evaluation_strategy,
+        eval_steps=args.eval_steps,
+        save_steps=args.eval_steps,
+        warmup_steps=args.warmup_steps,
+        lr_scheduler_type=args.scheduler,
+        weight_decay=args.weight_decay,
+        fp16=True,
         remove_unused_columns=False,
         report_to='wandb',
         run_name=args.run_name,
-        load_best_model_at_end=True,
-        metric_for_best_model="eval_loss"
     )
     
     model.gradient_checkpointing_enable()
@@ -65,8 +65,8 @@ def main(args):
     # setup peft
     peft_config = LoraConfig(
         task_type=TaskType.CAUSAL_LM,
-        r=32,
-        lora_alpha=64,
+        r=8,
+        lora_alpha=16,
         lora_dropout=0.1,
         target_modules=lora_module_dict[args.base_model],
         bias='none',
@@ -101,11 +101,11 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", required=True, type=str)
     parser.add_argument("--test_dataset", type=str)
     parser.add_argument("--base_model", required=True, type=str, choices=["codellama", "codellama_python", "llama2-7b"])
-    parser.add_argument("--max_seq_length", default=1024, type=int)
+    parser.add_argument("--max_seq_length", default=2048, type=int)
     parser.add_argument("--batch_size", default=4, type=int)
-    parser.add_argument("--learning_rate", default=1e-4, type=float)
+    parser.add_argument("--learning_rate", default=1e-5, type=float)
     parser.add_argument("--weight_decay", default=0.01, type=float)
-    parser.add_argument("--num_epochs", default=6, type=float)
+    parser.add_argument("--num_epochs", default=5, type=float)
     parser.add_argument("--num_workers", default=8, type=int)
     parser.add_argument("--log_interval", default=20, type=int)
     parser.add_argument("--gradient_accumulation_steps", default=8, type=int)
